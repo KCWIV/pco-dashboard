@@ -1,0 +1,1968 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Church Health Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+:root{
+  /* City Church Chicago brand */
+  --brand:#5AAEE0;--brand-dark:#3D8EC0;--brand-light:#EBF5FB;--brand-text:#fff;
+  --charcoal:#333333;
+  /* Layout */
+  --bg:#F0F4F8;--surface:#F7F9FC;--card:#FFFFFF;--border:#E2E8F0;
+  /* Accents */
+  --accent:#5AAEE0;--accent2:#3D8EC0;--green:#16a34a;--amber:#d97706;
+  --red:#dc2626;--purple:#7c3aed;--orange:#ea580c;--teal:#0891b2;
+  /* Typography */
+  --text:#1e293b;--muted:#64748b;--muted2:#94a3b8;
+  /* Sidebar */
+  --sidebar-w:240px;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;height:100vh;overflow:hidden;}
+a{color:var(--accent);}
+
+/* ── App shell ──────────────────────────────────────────────────────────── */
+#app-layout{display:flex;height:100vh;}
+#sidebar{width:var(--sidebar-w);min-width:var(--sidebar-w);background:var(--card);border-right:1px solid var(--border);display:flex;flex-direction:column;height:100vh;overflow-y:auto;z-index:10;}
+#main-wrap{flex:1;display:flex;flex-direction:column;height:100vh;overflow:hidden;}
+#main-scroll{flex:1;overflow-y:auto;background:var(--bg);}
+
+/* ── Sidebar ────────────────────────────────────────────────────────────── */
+.sidebar-logo{display:flex;align-items:center;justify-content:center;padding:18px 16px 14px;border-bottom:1px solid var(--border);}
+.sidebar-logo img{width:52px;height:52px;object-fit:contain;}
+.sidebar-section{padding:18px 12px 6px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--muted2);}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 14px;margin:2px 8px;border-radius:10px;cursor:pointer;font-size:14px;font-weight:500;color:var(--muted);border:none;background:none;width:calc(100% - 16px);text-align:left;font-family:'DM Sans',sans-serif;transition:background .15s,color .15s;}
+.nav-item:hover{background:var(--surface);color:var(--text);}
+.nav-item.active{background:var(--brand-light);color:var(--brand-dark);font-weight:600;}
+.nav-item.active .nav-icon{color:var(--brand);}
+.nav-icon{width:20px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.sidebar-footer{margin-top:auto;padding:16px 12px;border-top:1px solid var(--border);}
+.sidebar-church-badge{background:linear-gradient(135deg,var(--brand),var(--brand-dark));border-radius:12px;padding:14px 16px;color:#fff;}
+.sidebar-church-badge .badge-title{font-weight:700;font-size:13px;margin-bottom:2px;}
+.sidebar-church-badge .badge-sub{font-size:11px;opacity:.8;}
+
+/* ── Top bar ────────────────────────────────────────────────────────────── */
+#topbar{background:var(--card);border-bottom:1px solid var(--border);padding:0 28px;height:64px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+#topbar-left{display:flex;flex-direction:column;}
+#page-title{font-size:22px;font-weight:700;color:var(--text);letter-spacing:-.02em;line-height:1;}
+#hdr-sub{color:var(--muted);font-size:12px;margin-top:2px;}
+#topbar-right{display:flex;align-items:center;gap:8px;}
+#demo-badge{background:rgba(217,119,6,.1);border:1px solid rgba(217,119,6,.25);color:var(--amber);border-radius:99px;padding:3px 12px;font-size:12px;font-weight:600;display:none;}
+.btn-sm{background:var(--surface);border:1px solid var(--border);color:var(--muted);border-radius:9px;padding:7px 16px;font-size:13px;font-weight:500;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s;}
+.btn-sm:hover{border-color:var(--brand);color:var(--brand);}
+.btn-sm-primary{background:var(--brand);color:#fff;border:none;border-radius:9px;padding:8px 18px;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;transition:opacity .15s;}
+.btn-sm-primary:hover{opacity:.88;}
+
+/* ── Content ────────────────────────────────────────────────────────────── */
+#content{padding:24px 28px;max-width:1400px;}
+
+/* ── Stat grid ──────────────────────────────────────────────────────────── */
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:20px;}
+.stat-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:20px 22px;position:relative;overflow:hidden;cursor:default;box-shadow:0 1px 3px rgba(0,0,0,.05);}
+.stat-card:hover{box-shadow:0 4px 12px rgba(0,0,0,.08);transform:translateY(-1px);}
+.stat-card.featured{background:linear-gradient(135deg,var(--brand),var(--brand-dark));border-color:transparent;box-shadow:0 8px 24px rgba(90,174,224,.35);}
+.stat-card.featured .stat-label{color:rgba(255,255,255,.75);}
+.stat-card.featured .stat-value{color:#fff;}
+.stat-card.featured .stat-sub{color:rgba(255,255,255,.7);}
+.stat-card .arrow-btn{position:absolute;top:18px;right:18px;width:28px;height:28px;border-radius:50%;border:1.5px solid rgba(0,0,0,.1);background:transparent;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted);cursor:default;}
+.stat-card.featured .arrow-btn{border-color:rgba(255,255,255,.35);color:rgba(255,255,255,.8);}
+.accent-bar{display:none;}
+.stat-label{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.09em;margin-bottom:8px;font-weight:600;}
+.stat-value{font-size:34px;font-weight:700;line-height:1;margin-bottom:6px;letter-spacing:-.03em;color:var(--text);}
+.stat-sub{color:var(--muted);font-size:12px;line-height:1.4;}
+
+/* ── Two-col ────────────────────────────────────────────────────────────── */
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;}
+@media(max-width:780px){.two-col{grid-template-columns:1fr;}}
+
+/* ── Panel ──────────────────────────────────────────────────────────────── */
+.panel{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:20px 22px;margin-bottom:14px;box-shadow:0 1px 3px rgba(0,0,0,.04);}
+.panel-title{font-weight:600;font-size:15px;margin-bottom:3px;color:var(--text);}
+.panel-sub{color:var(--muted);font-size:12px;margin-bottom:14px;line-height:1.5;}
+
+/* ── Table ──────────────────────────────────────────────────────────────── */
+table{width:100%;border-collapse:collapse;font-size:14px;}
+th{text-align:left;color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;padding:0 0 10px;letter-spacing:.07em;}
+td{padding:10px 0;}
+tr+tr td{border-top:1px solid var(--border);}
+
+/* ── Pill ───────────────────────────────────────────────────────────────── */
+.pill{border-radius:99px;padding:3px 10px;font-size:11px;font-weight:600;font-family:'DM Mono',monospace;display:inline-block;}
+
+/* ── Team cards ─────────────────────────────────────────────────────────── */
+.team-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:14px;}
+.team-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:18px 20px;border-left:3px solid;box-shadow:0 1px 3px rgba(0,0,0,.04);transition:box-shadow .2s,transform .15s;}
+.team-card:hover{box-shadow:0 4px 12px rgba(0,0,0,.08);transform:translateY(-1px);}
+.coverage-bar-bg{height:5px;background:var(--surface);border-radius:99px;overflow:hidden;margin-top:14px;border:1px solid var(--border);}
+.coverage-bar-fill{height:100%;border-radius:99px;transition:width .6s cubic-bezier(.4,0,.2,1);}
+
+/* ── Week selector ──────────────────────────────────────────────────────── */
+.week-tabs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;}
+.week-btn{background:var(--surface);border:1px solid var(--border);color:var(--muted);border-radius:8px;padding:5px 12px;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s;}
+.week-btn:hover{border-color:var(--brand);color:var(--brand);}
+.week-btn.active{background:var(--brand-light);border-color:var(--brand);color:var(--brand-dark);font-weight:600;}
+
+/* ── Clickable row ──────────────────────────────────────────────────────── */
+.crow{cursor:pointer;transition:background .1s;}
+.crow:hover td{background:rgba(90,174,224,.05);}
+
+/* ── Alert card ─────────────────────────────────────────────────────────── */
+.alert-card{background:#fff8f8;border:1px solid rgba(220,38,38,.15);border-radius:16px;padding:18px 22px;margin-bottom:14px;box-shadow:0 1px 3px rgba(0,0,0,.04);}
+.alert-card-header{display:flex;align-items:center;gap:10px;margin-bottom:14px;}
+.alert-icon{width:36px;height:36px;border-radius:10px;background:rgba(220,38,38,.1);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;}
+.alert-title{font-weight:700;font-size:15px;color:var(--red);}
+.alert-sub{color:var(--muted);font-size:12px;margin-top:2px;}
+.alert-row{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-radius:10px;background:#fff;border:1px solid rgba(220,38,38,.1);margin-bottom:7px;cursor:pointer;transition:box-shadow .15s;}
+.alert-row:hover{box-shadow:0 2px 8px rgba(220,38,38,.1);}
+.alert-row:last-child{margin-bottom:0;}
+.alert-name{font-weight:600;font-size:14px;color:var(--text);}
+.alert-meta{color:var(--muted);font-size:12px;margin-top:2px;}
+.alert-badge{background:rgba(220,38,38,.08);color:var(--red);border:1px solid rgba(220,38,38,.2);border-radius:99px;padding:3px 10px;font-size:11px;font-weight:600;white-space:nowrap;}
+
+/* ── Volunteer search + list ────────────────────────────────────────────── */
+.vol-search{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 14px;color:var(--text);font-size:14px;font-family:'DM Sans',sans-serif;outline:none;transition:border-color .2s,box-shadow .2s;}
+.vol-search:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(90,174,224,.15);}
+.vol-search-wrap{position:relative;margin-bottom:14px;}
+.vol-row{display:flex;align-items:center;gap:14px;padding:10px 12px;border-radius:10px;cursor:pointer;transition:background .12s;}
+.vol-row:hover{background:var(--surface);}
+.vol-avatar{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0;}
+.vol-name{font-weight:600;font-size:14px;color:var(--text);}
+.vol-meta{color:var(--muted);font-size:12px;margin-top:1px;}
+.vol-right{margin-left:auto;text-align:right;}
+.vol-count{font-size:13px;font-weight:700;font-family:'DM Mono',monospace;}
+.vol-rate{font-size:11px;color:var(--muted);margin-top:1px;}
+.vol-list-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+
+/* ── Volunteer detail panel ─────────────────────────────────────────────── */
+#vol-detail-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);backdrop-filter:blur(4px);z-index:200;display:none;align-items:flex-start;justify-content:flex-end;}
+#vol-detail-panel{background:var(--card);border-left:1px solid var(--border);width:min(560px,100vw);height:100vh;overflow-y:auto;padding:28px;position:relative;animation:slideIn .25s cubic-bezier(.4,0,.2,1);box-shadow:-8px 0 32px rgba(0,0,0,.1);}
+@keyframes slideIn{from{transform:translateX(40px);opacity:0;}to{transform:translateX(0);opacity:1;}}
+.vd-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;}
+.vd-avatar{width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;margin-right:14px;flex-shrink:0;}
+.vd-name{font-size:20px;font-weight:700;letter-spacing:-.02em;color:var(--text);}
+.vd-teams{color:var(--muted);font-size:13px;margin-top:3px;}
+.vd-close{background:var(--surface);border:1px solid var(--border);color:var(--muted);border-radius:8px;width:32px;height:32px;cursor:pointer;font-size:18px;line-height:1;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s;}
+.vd-close:hover{border-color:var(--red);color:var(--red);}
+.vd-stat-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px;}
+.vd-stat{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;}
+.vd-stat-label{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.08em;font-weight:600;margin-bottom:4px;}
+.vd-stat-value{font-size:20px;font-weight:700;letter-spacing:-.02em;color:var(--text);}
+.vd-range-tabs{display:flex;gap:6px;margin-bottom:14px;}
+.vd-range-btn{background:var(--surface);border:1px solid var(--border);color:var(--muted);border-radius:7px;padding:5px 12px;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;font-weight:500;transition:all .15s;}
+.vd-range-btn:hover{color:var(--text);}
+.vd-range-btn.active{background:var(--brand-light);border-color:var(--brand);color:var(--brand-dark);font-weight:600;}
+.vd-section-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--muted2);margin-bottom:10px;}
+.vd-week-row{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);}
+.vd-week-label{width:70px;font-size:12px;color:var(--muted);flex-shrink:0;}
+.vd-bar-wrap{flex:1;height:8px;background:var(--surface);border-radius:99px;overflow:hidden;border:1px solid var(--border);}
+.vd-bar{height:100%;border-radius:99px;transition:width .4s ease;}
+.vd-bar-count{width:28px;text-align:right;font-size:12px;font-weight:600;font-family:'DM Mono',monospace;flex-shrink:0;}
+
+/* ── Error/loading ──────────────────────────────────────────────────────── */
+#error-banner{margin:16px 28px 0;background:#fff8f8;border:1px solid rgba(220,38,38,.2);border-radius:12px;padding:13px 18px;color:var(--red);display:none;}
+#loading{text-align:center;padding:80px 28px;display:none;}
+@keyframes spin{to{transform:rotate(360deg);}}
+#progress-wrap{max-width:440px;margin:22px auto 0;text-align:left;}
+#progress-step{color:var(--muted);font-size:13px;margin-bottom:9px;min-height:18px;}
+#progress-bar-bg{height:6px;background:var(--surface);border-radius:99px;overflow:hidden;border:1px solid var(--border);}
+#progress-bar-fill{height:100%;background:linear-gradient(90deg,var(--brand),var(--brand-dark));border-radius:99px;width:0%;transition:width .4s ease;}
+#progress-pct{color:var(--muted);font-size:12px;margin-top:6px;font-family:'DM Mono',monospace;}
+
+/* ── Note box ───────────────────────────────────────────────────────────── */
+.note{background:var(--brand-light);border:1px solid rgba(90,174,224,.25);border-radius:10px;padding:11px 15px;font-size:13px;color:var(--muted);margin-bottom:14px;}
+.note strong{color:var(--text);}
+
+/* ── Status badge ───────────────────────────────────────────────────────── */
+.sbadge{border-radius:99px;padding:2px 9px;font-size:11px;font-weight:600;}
+
+/* ── Range dropdown ─────────────────────────────────────────────────────── */
+.range-dropdown{position:relative;display:inline-block;}
+.range-toggle{background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:9px;padding:7px 14px 7px 12px;font-size:13px;cursor:pointer;font-family:'DM Sans',sans-serif;display:flex;align-items:center;gap:8px;transition:all .15s;min-width:130px;}
+.range-toggle:hover{border-color:var(--brand);}
+.range-toggle .caret{font-size:10px;color:var(--muted);transition:transform .2s;}
+.range-dropdown.open .caret{transform:rotate(180deg);}
+.range-menu{position:absolute;top:calc(100% + 5px);left:0;background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:20;min-width:190px;padding:5px;display:none;}
+.range-dropdown.open .range-menu{display:block;}
+.range-option{display:flex;align-items:center;justify-content:space-between;padding:9px 13px;border-radius:7px;font-size:13px;color:var(--text);cursor:pointer;font-family:'DM Sans',sans-serif;transition:background .1s;}
+.range-option:hover{background:var(--surface);}
+.range-option.active{color:var(--brand-dark);font-weight:600;}
+.range-option.active::after{content:'✓';color:var(--brand);font-size:12px;}
+.range-option .range-sub{color:var(--muted);font-size:11px;}
+.range-divider{height:1px;background:var(--border);margin:4px 8px;}
+.range-custom{display:flex;align-items:center;gap:6px;padding:8px 12px;}
+.range-custom input{width:70px;background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:5px 8px;color:var(--text);font-size:12px;font-family:'DM Mono',monospace;}
+.range-custom button{background:var(--brand);color:#fff;border:none;border-radius:7px;padding:5px 12px;font-size:12px;cursor:pointer;font-weight:600;font-family:'DM Sans',sans-serif;}
+
+/* ── Modals ─────────────────────────────────────────────────────────────── */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:300;}
+.modal-box{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:32px 36px;max-width:520px;width:92%;box-shadow:0 20px 60px rgba(0,0,0,.15);max-height:88vh;overflow-y:auto;}
+.modal-box h2{font-size:22px;font-weight:700;margin-bottom:8px;color:var(--text);}
+.modal-box p{color:var(--muted);font-size:14px;line-height:1.65;margin-bottom:22px;}
+.field-label{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;font-weight:600;}
+.field-group{margin-bottom:14px;}
+input[type=text],input[type=password]{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:11px 14px;color:var(--text);font-size:14px;font-family:'DM Mono',monospace;outline:none;transition:border-color .2s,box-shadow .2s;}
+input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(90,174,224,.15);}
+.btn-primary{width:100%;background:linear-gradient(135deg,var(--brand),var(--brand-dark));color:#fff;border:none;border-radius:10px;padding:13px;font-size:15px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;transition:opacity .2s,transform .1s;}
+.btn-primary:hover{opacity:.9;}
+.btn-secondary{width:100%;background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:10px;padding:11px;font-size:14px;cursor:pointer;margin-top:9px;font-family:'DM Sans',sans-serif;transition:border-color .2s,color .2s;}
+.btn-secondary:hover{border-color:var(--muted2);color:var(--text);}
+#modal-error{color:var(--red);font-size:13px;margin-top:10px;display:none;padding:8px 12px;background:#fff8f8;border-radius:8px;border:1px solid rgba(220,38,38,.2);}
+</style>
+</head>
+<body>
+
+<!-- Connect modal -->
+<div class="overlay" id="modal-overlay">
+  <div class="modal-box">
+    <h2>Connect to Planning Center</h2>
+    <p>Enter your Personal Access Token credentials from <a href="https://api.planningcenteronline.com/oauth/applications" target="_blank">api.planningcenteronline.com</a> → <strong>Personal Access Tokens</strong> → Create one now.</p>
+    <div class="field-group"><div class="field-label">Application ID</div><input type="text" id="input-app-id" placeholder="abc123..." autocomplete="off"/></div>
+    <div class="field-group"><div class="field-label">Secret</div><input type="password" id="input-secret" placeholder="Your secret token"/></div>
+    <div id="modal-error"></div>
+    <button class="btn-primary" style="margin-top:12px" onclick="connectPCO()">Connect &amp; Load Data</button>
+    <button class="btn-secondary" onclick="loadDemo()">Use Demo Data Instead</button>
+  </div>
+</div>
+
+<!-- Volunteer detail side panel -->
+<div id="vol-detail-overlay" onclick="maybeCloseVolDetail(event)" style="display:none">
+  <div id="vol-detail-panel">
+    <div class="vd-header">
+      <div style="display:flex;align-items:center;gap:14px;flex:1">
+        <div class="vd-avatar" id="vd-avatar"></div>
+        <div><div class="vd-name" id="vd-name"></div><div class="vd-teams" id="vd-teams"></div></div>
+      </div>
+      <button class="vd-close" onclick="closeVolDetail()">✕</button>
+    </div>
+    <div class="vd-stat-row" id="vd-stats"></div>
+    <div class="vd-range-tabs" id="vd-range-tabs"></div>
+    <div class="vd-section-title">Serve History</div>
+    <div id="vd-chart" style="margin-bottom:20px"></div>
+    <div class="vd-section-title">Weekly Breakdown</div>
+    <div id="vd-weeks"></div>
+  </div>
+</div>
+
+<!-- Life group detail side panel -->
+<div id="lg-detail-overlay" onclick="if(event.target===this)closeGroupDetail()" style="position:fixed;inset:0;background:rgba(0,0,0,.4);backdrop-filter:blur(4px);z-index:200;display:none;align-items:flex-start;justify-content:flex-end;">
+  <div id="lg-detail-panel" style="background:var(--card);border-left:1px solid var(--border);width:min(560px,100vw);height:100vh;overflow-y:auto;padding:28px;position:relative;animation:slideIn .25s cubic-bezier(.4,0,.2,1);box-shadow:-8px 0 32px rgba(0,0,0,.1);"></div>
+</div>
+
+<!-- Legacy multi-service detail modal (kept for multi-service volunteer rows) -->
+<div class="overlay" id="detail-overlay" style="display:none" onclick="maybeCloseDetail(event)">
+  <div class="modal-box" style="max-width:600px">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
+      <h2 id="detail-name" style="font-size:19px"></h2>
+      <button onclick="closeDetail()" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;line-height:1">✕</button>
+    </div>
+    <p id="detail-sub" style="margin-bottom:16px;font-size:13px"></p>
+    <div id="detail-body"></div>
+  </div>
+</div>
+
+<!-- App shell -->
+<div id="app-layout">
+
+  <!-- Sidebar -->
+  <aside id="sidebar">
+    <div class="sidebar-logo">
+      <img src="/logo.png" alt="CCC"/>
+    </div>
+    <div class="sidebar-section">Menu</div>
+    <nav>
+      <button class="nav-item active" data-tab="overview" onclick="switchTab('overview')">
+        <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></span> Dashboard
+      </button>
+      <button class="nav-item" data-tab="citykids" onclick="switchTab('citykids')">
+        <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span> City Kids
+      </button>
+      <button class="nav-item" data-tab="volunteers" onclick="switchTab('volunteers')">
+        <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z"/></svg></span> Volunteers
+      </button>
+      <button class="nav-item" data-tab="attendance" onclick="switchTab('attendance')">
+        <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span> Attendance
+      </button>
+      <button class="nav-item" data-tab="teams" onclick="switchTab('teams')">
+        <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span> Teams
+      </button>
+      <button class="nav-item" data-tab="people" onclick="switchTab('people')">
+        <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span> People
+      </button>
+      <button class="nav-item" data-tab="lifegroups" onclick="switchTab('lifegroups')">
+        <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></span> Life Groups
+      </button>
+    </nav>
+    <div class="sidebar-section" style="margin-top:12px">Reports</div>
+    <nav>
+      <a href="/report" target="_blank" class="nav-item" style="text-decoration:none">
+        <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></span> Weekly Report
+      </a>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="sidebar-church-badge">
+        <div class="badge-title">City Church Chicago</div>
+        <div class="badge-sub">Church Health Dashboard</div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main content -->
+  <div id="main-wrap">
+    <header id="topbar">
+      <div id="topbar-left">
+        <div id="page-title">Dashboard</div>
+        <div id="hdr-sub">—</div>
+      </div>
+      <div id="topbar-right">
+        <div id="demo-badge">⚠ Demo</div>
+        <button class="btn-sm" id="btn-refresh" onclick="refreshData()" style="display:none">↻ Refresh</button>
+        <button class="btn-sm" onclick="openModal()">⚙ Settings</button>
+      </div>
+    </header>
+    <div id="main-scroll">
+      <div id="error-banner"></div>
+      <div id="loading">
+        <div style="display:inline-block;width:40px;height:40px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite"></div>
+        <div style="margin-top:16px;color:var(--text);font-weight:600;font-size:16px;letter-spacing:-.01em">Syncing with Planning Center</div>
+        <div style="color:var(--muted);font-size:13px;margin-top:4px">Fetching volunteers, attendance &amp; kids check-ins</div>
+        <div id="progress-wrap">
+          <div id="progress-step">Connecting…</div>
+          <div id="progress-bar-bg"><div id="progress-bar-fill"></div></div>
+          <div id="progress-pct">0%</div>
+        </div>
+      </div>
+      <div id="content"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+var D=null, activeTab='overview', isDemo=false, selectedMultiWeek=null, selectedKidsMultiWeek=null, currentWeeks=4;
+var P=null, peopleLoading=false;
+var LG=null, lgLoading=false;
+var volSearchQuery='', currentVolDetail=null, volDetailRange=null;
+var _volAvatarColors=['#5b8dee','#10d9a0','#b76cfd','#ff7e3f','#ff5c7a','#ffc53d','#22d3ee'];
+function avatarColor(name){var h=0;for(var i=0;i<(name||'').length;i++)h=(h*31+name.charCodeAt(i))&0xffff;return _volAvatarColors[h%_volAvatarColors.length];}
+function initials(name){return(name||'').split(' ').map(function(w){return w[0]||'';}).join('').slice(0,2).toUpperCase();}
+var $=function(id){return document.getElementById(id);};
+var fmt=function(n){return n==null?'—':Number(n).toLocaleString();};
+// HTML escape to prevent XSS from PCO data (volunteer names, team names, etc.)
+var esc=function(s){if(!s)return'';var d=document.createElement('div');d.appendChild(document.createTextNode(s));return d.innerHTML;};
+var pct=function(a,b){return b?Math.round(a/b*100):0;};
+// Participation rate: % of weeks where they confirmed at least once.
+// Fairer for multi-team volunteers — showing up once in a week counts as 100% for that week.
+function participationRate(v){
+  var weeksScheduled=0,weeksActive=0;
+  for(var i=0;i<(v.scheduledByWeek||[]).length;i++){
+    if(v.scheduledByWeek[i]>0){weeksScheduled++;if(v.confirmedByWeek[i]>0)weeksActive++;}
+  }
+  return weeksScheduled>0?Math.round(weeksActive/weeksScheduled*100):0;
+}
+
+function colorFor(p){return p>=90?'var(--green)':p>=70?'var(--amber)':'var(--red)';}
+function pillHTML(p){var c=colorFor(p);return '<span class="pill" style="background:'+c+'22;color:'+c+';border:1px solid '+c+'44">'+p+'%</span>';}
+function statusColor(s){s=(s||'').toUpperCase();if(s==='C')return'var(--green)';if(s==='D')return'var(--red)';if(s==='B')return'var(--amber)';return'var(--muted)';}
+function statusLabel(s){s=(s||'').toUpperCase();if(s==='C')return'Confirmed';if(s==='D')return'Declined';if(s==='B')return'Blocked Out';if(s==='U')return'Unconfirmed';return s||'Unknown';}
+
+// ── Demo data ─────────────────────────────────────────────────────────────────
+function generateMockData(){
+  var WEEKS=8,labels=[],attendance=[],scheduled=[],confirmed=[],declined=[],blocked=[],firstTimers=[];
+  for(var i=WEEKS-1;i>=0;i--){
+    var d=new Date();d.setDate(d.getDate()-i*7-d.getDay());
+    labels.push(d.toLocaleDateString('en-US',{month:'short',day:'numeric'}));
+    attendance.push(Math.floor(900+Math.random()*600));
+    var sch=Math.floor(60+Math.random()*20);
+    scheduled.push(sch);confirmed.push(Math.floor(sch*(0.78+Math.random()*0.15)));
+    declined.push(Math.floor(sch*(0.04+Math.random()*0.06)));
+    blocked.push(Math.floor(sch*(0.02+Math.random()*0.04)));
+    firstTimers.push(Math.floor(2+Math.random()*6));
+  }
+  var teams=[
+    {name:'Worship',scheduled:18,confirmed:16,declined:1,blocked:1,coverage:89},
+    {name:'Kids Ministry',scheduled:24,confirmed:19,declined:3,blocked:2,coverage:79},
+    {name:'Greeters',scheduled:12,confirmed:12,declined:0,blocked:0,coverage:100},
+    {name:'Production/AV',scheduled:8,confirmed:6,declined:1,blocked:1,coverage:75},
+    {name:'Parking',scheduled:6,confirmed:4,declined:1,blocked:1,coverage:67},
+    {name:'Café',scheduled:10,confirmed:9,declined:1,blocked:0,coverage:90},
+  ];
+  // Build per-week multi-server lists
+  var names=[['Alex Johnson',['Worship','Kids Ministry']],['Maria Chen',['Kids Ministry','Kids Ministry']],
+    ['David Park',['Production/AV','Production/AV']],['Sarah Williams',['Greeters','Café']],
+    ['James Torres',['Worship','Worship']],['Priya Patel',['Kids Ministry','Greeters']],
+    ['Marcus Lee',['Worship','Production/AV']],['Elena Reyes',['Café','Greeters']]];
+  var weeklyMultiServers=labels.map(function(lbl,wi){
+    var count=Math.floor(3+Math.random()*5);
+    var result=[];
+    for(var j=0;j<count&&j<names.length;j++){
+      var n=names[j],sc=Math.floor(2+Math.random()*2);
+      result.push({name:n[0],serviceCount:sc,teamCount:n[1].length,teams:n[1],
+        schedules:n[1].map(function(t,ti){return{date:lbl,serviceType:'Sunday Morning',team:t,position:'Volunteer',status:ti===0?'C':'C'};})
+      });
+    }
+    return result;
+  });
+  var uniqueVolunteers=scheduled.map(function(s){return Math.floor(s*0.75+Math.random()*5);});
+  // Generate mock service-time breakdown
+  var attendanceByService={'9:00 AM':[],'10:30 AM':[],'12:30 PM':[]};
+  attendance.forEach(function(total){
+    var a9=Math.floor(total*0.35);var a10=Math.floor(total*0.40);var a12=total-a9-a10;
+    attendanceByService['9:00 AM'].push(a9);
+    attendanceByService['10:30 AM'].push(a10);
+    attendanceByService['12:30 PM'].push(a12);
+  });
+  var kidsAttendance=attendance.map(function(a){return Math.floor(a*0.18+Math.random()*20);});
+  var decisions=attendance.map(function(){return Math.floor(Math.random()*5);});
+  // Mock City Kids data
+  var kidsCheckinCounts=kidsAttendance.map(function(k){return Math.max(0,k-Math.floor(Math.random()*8));});
+  var kidsCheckinByService={'9:00 AM':[],'10:30 AM':[],'12:30 PM':[]};
+  kidsCheckinCounts.forEach(function(total){
+    var a9=Math.floor(total*0.2);var a10=Math.floor(total*0.45);var a12=total-a9-a10;
+    kidsCheckinByService['9:00 AM'].push(a9);
+    kidsCheckinByService['10:30 AM'].push(a10);
+    kidsCheckinByService['12:30 PM'].push(a12);
+  });
+  var kidsRoomBreakdown={};
+  ['9:00 AM','10:30 AM','12:30 PM'].forEach(function(svc){
+    kidsRoomBreakdown[svc]={};
+    ['01 Crawlers','02 Walkers','03 Pre-K & K','04 Elem','05 J High'].forEach(function(room){
+      kidsRoomBreakdown[svc][room]=labels.map(function(){return Math.floor(Math.random()*12+1);});
+    });
+  });
+  var weeklyMultiServiceKids=labels.map(function(){
+    var n=Math.floor(Math.random()*6)+2;var arr=[];
+    for(var i=0;i<n;i++)arr.push({name:'Kid '+(i+1),serviceCount:2,services:['9:00 AM','10:30 AM']});
+    return arr;
+  });
+  var uniqueKids=kidsCheckinCounts.map(function(c){return Math.max(0,c-Math.floor(Math.random()*8));});
+  return {labels,attendance,attendanceByService,kidsAttendance,decisions,scheduled,confirmed,declined,blocked,firstTimers,teams,weeklyMultiServers,uniqueVolunteers,kidsCheckinCounts,kidsCheckinByService,kidsRoomBreakdown,weeklyMultiServiceKids,uniqueKids};
+}
+
+// ── Progress bar ──────────────────────────────────────────────────────────────
+var progressSource = null;
+function startProgress() {
+  if (progressSource) { progressSource.close(); }
+  progressSource = new EventSource('/progress');
+  progressSource.onmessage = function(e) {
+    try {
+      var msg = JSON.parse(e.data);
+      $('progress-step').textContent = msg.step || '';
+      $('progress-bar-fill').style.width = (msg.pct || 0) + '%';
+      $('progress-pct').textContent = (msg.pct || 0) + '%';
+    } catch(err) {}
+  };
+}
+function stopProgress() {
+  if (progressSource) { progressSource.close(); progressSource = null; }
+}
+
+// ── Connect ────────────────────────────────────────────────────────────────────
+async function connectPCO(){
+  var appId=$('input-app-id').value.trim(),secret=$('input-secret').value.trim();
+  if(!appId||!secret)return;
+  $('modal-error').style.display='none';
+  setLoading(true);
+  startProgress();
+  try{
+    var ar=await fetch('/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({appId,secret})});
+    if(!ar.ok)throw new Error('Could not save credentials');
+    var dr=await fetch('/data?weeks='+currentWeeks);
+    if(!dr.ok){var e=await dr.json().catch(function(){return{};});throw new Error(e.error||'HTTP '+dr.status);}
+    D=await dr.json();
+    if(D.error)throw new Error(D.error);
+    isDemo=false;selectedMultiWeek=D.labels.length-1;selectedKidsMultiWeek=D.labels.length-1;
+    initChartData();hideModal();renderAll();
+  }catch(e){
+    $('modal-error').textContent='⚠ '+e.message;$('modal-error').style.display='block';
+  }finally{setLoading(false);stopProgress();}
+}
+function loadDemo(){D=generateMockData();isDemo=true;selectedMultiWeek=D.labels.length-1;selectedKidsMultiWeek=D.labels.length-1;initChartData();hideModal();renderAll();}
+async function refreshData(){
+  if(isDemo)return;
+  setLoading(true);
+  startProgress();
+  try{
+    // Force bypass cache on manual refresh
+    var dr=await fetch('/data?refresh=1&weeks='+currentWeeks);
+    D=await dr.json();
+    if(D.error)throw new Error(D.error);
+    selectedMultiWeek=D.labels.length-1;selectedKidsMultiWeek=D.labels.length-1;initChartData();renderAll();
+  }
+  catch(e){showError(e.message);}
+  finally{setLoading(false);stopProgress();}
+}
+
+async function loadLifeGroupsData(force){
+  if(lgLoading)return;
+  if(LG&&!force)return;
+  lgLoading=true;
+  renderLifeGroupsTab();
+  try{
+    var r=await fetch('/lifegroups-data'+(force?'?refresh=1':''));
+    LG=await r.json();
+    if(LG.error)throw new Error(LG.error);
+  }catch(e){LG={error:e.message};}
+  finally{lgLoading=false;}
+  if(activeTab==='lifegroups')renderLifeGroupsTab();
+}
+
+var lgSearchQuery='';
+var lgExpandedDay=null;
+var lgDetailCache={};
+var lgDetailLoading=null;
+var lgFilters={day:[],gender:[],size:[]};
+
+function lgDetectGender(name){
+  var n=(name||'').toLowerCase();
+  if(/women|ladies|momco|mom's|women's/.test(n)) return 'Women';
+  if(/\bmen's\b|\(men\)|\bguy/.test(n)) return 'Men';
+  if(/co-ed|coed/.test(n)) return 'Co-Ed';
+  return 'Mixed/Other';
+}
+function lgDetectDay(schedule){
+  var m=(schedule||'').match(/Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday/);
+  return m?m[0]:'Unscheduled';
+}
+function lgDetectSize(members){
+  if(members<5) return 'Small';
+  if(members<=25) return 'Healthy';
+  return 'Large';
+}
+function toggleLgFilter(type,value){
+  var arr=lgFilters[type];
+  var idx=arr.indexOf(value);
+  if(idx>=0) arr.splice(idx,1); else arr.push(value);
+  renderLifeGroupsTab();
+}
+function clearLgFilters(){
+  lgFilters={day:[],gender:[],size:[]};
+  renderLifeGroupsTab();
+}
+
+function lgGroupHealth(members){
+  if(members<5) return{label:'Small',color:'var(--amber)'};
+  if(members<=25) return{label:'Healthy',color:'var(--green)'};
+  if(members<=40) return{label:'Large',color:'var(--amber)'};
+  return{label:'Very Large',color:'var(--red)'};
+}
+
+function toggleDayExpand(day){
+  lgExpandedDay=lgExpandedDay===day?null:day;
+  renderLifeGroupsTab();
+}
+
+async function openGroupDetail(groupId,groupName){
+  // Show slide-out panel
+  var ov=$('lg-detail-overlay');
+  if(!ov)return;
+  ov.style.display='flex';
+  var panel=$('lg-detail-panel');
+  panel.innerHTML='<div style="text-align:center;padding:60px 0">'+
+    '<div style="display:inline-block;width:28px;height:28px;border:3px solid var(--border);border-top-color:var(--brand);border-radius:50%;animation:spin 1s linear infinite"></div>'+
+    '<div style="margin-top:12px;color:var(--muted);font-size:13px">Loading '+esc(groupName)+'…</div></div>';
+
+  if(lgDetailCache[groupId]){
+    renderGroupDetail(groupId,groupName,lgDetailCache[groupId]);
+    return;
+  }
+  lgDetailLoading=groupId;
+  try{
+    var r=await fetch('/lifegroup-detail?id='+groupId);
+    var data=await r.json();
+    if(data.error)throw new Error(data.error);
+    lgDetailCache[groupId]=data;
+    if(lgDetailLoading===groupId)renderGroupDetail(groupId,groupName,data);
+  }catch(e){
+    panel.innerHTML='<div style="padding:20px"><button onclick="closeGroupDetail()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted);float:right">✕</button>'+
+      '<div style="color:var(--red);font-weight:600;margin-top:20px">Error loading group</div><div style="color:var(--muted);font-size:13px;margin-top:6px">'+esc(e.message)+'</div></div>';
+  }
+}
+
+function closeGroupDetail(){
+  var ov=$('lg-detail-overlay');
+  if(ov)ov.style.display='none';
+  lgDetailLoading=null;
+}
+
+function renderGroupDetail(groupId,groupName,data){
+  var panel=$('lg-detail-panel');
+  if(!panel)return;
+  var leaders=data.leaders||[];
+  var members=data.members||[];
+  var attendance=data.attendance||[];
+
+  // Header
+  var html='<button onclick="closeGroupDetail()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted);position:absolute;top:16px;right:20px">✕</button>';
+  html+='<div style="margin-bottom:20px"><div style="font-size:20px;font-weight:700;color:var(--text)">'+esc(groupName)+'</div>';
+  html+='<div style="color:var(--muted);font-size:13px;margin-top:4px">'+fmt(data.totalMembers)+' members · '+leaders.length+' leader'+(leaders.length!==1?'s':'')+'</div></div>';
+
+  // Attendance trend (if available)
+  if(attendance.length>0){
+    var attDates=attendance.slice().reverse();
+    html+='<div style="margin-bottom:20px;padding:16px;background:var(--surface);border-radius:12px;border:1px solid var(--border)">';
+    html+='<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:12px">Attendance — Last '+attDates.length+' Meetings</div>';
+    // Mini bar chart
+    var maxAtt=Math.max.apply(null,attDates.map(function(a){return a.attended+a.absent;}));
+    if(maxAtt===0)maxAtt=1;
+    html+='<div style="display:flex;align-items:flex-end;gap:3px;height:64px;margin-bottom:8px">';
+    attDates.forEach(function(a){
+      var total=a.attended+a.absent;
+      var h=Math.round(a.attended/maxAtt*60);
+      var hAbs=Math.round(a.absent/maxAtt*60);
+      var pct=total>0?Math.round(a.attended/total*100):0;
+      html+='<div style="flex:1;display:flex;flex-direction:column;align-items:stretch;gap:1px" title="'+a.date+': '+a.attended+'/'+total+' ('+pct+'%)">';
+      if(hAbs>0)html+='<div style="height:'+hAbs+'px;background:var(--red);opacity:.25;border-radius:2px 2px 0 0"></div>';
+      html+='<div style="height:'+h+'px;background:var(--green);border-radius:'+(hAbs>0?'0 0 2px 2px':'2px')+'"></div>';
+      html+='</div>';
+    });
+    html+='</div>';
+    // Date labels
+    html+='<div style="display:flex;gap:3px">';
+    attDates.forEach(function(a){
+      var short=a.date?a.date.slice(5).replace('-','/'):'';
+      html+='<div style="flex:1;text-align:center;font-size:9px;color:var(--muted)">'+short+'</div>';
+    });
+    html+='</div>';
+    // Summary row
+    var totalAttended=attDates.reduce(function(s,a){return s+a.attended;},0);
+    var totalPossible=attDates.reduce(function(s,a){return s+a.attended+a.absent;},0);
+    var avgPct=totalPossible>0?Math.round(totalAttended/totalPossible*100):0;
+    html+='<div style="margin-top:10px;display:flex;gap:16px;font-size:12px;color:var(--muted)">';
+    html+='<span>Avg attendance: <strong style="color:var(--text)">'+avgPct+'%</strong></span>';
+    html+='<span style="color:var(--green)">● Present</span>';
+    html+='<span style="color:var(--red);opacity:.5">● Absent</span>';
+    html+='</div></div>';
+
+    // Per-meeting detail (collapsible)
+    html+='<details style="margin-bottom:20px"><summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--text);padding:8px 0">Meeting-by-Meeting Breakdown</summary>';
+    attendance.forEach(function(a){
+      var total=a.attended+a.absent;
+      var pct=total>0?Math.round(a.attended/total*100):0;
+      html+='<div style="padding:8px 0;border-bottom:1px solid var(--border)">';
+      html+='<div style="display:flex;justify-content:space-between;align-items:center">';
+      html+='<span style="font-size:13px;color:var(--text)">'+esc(a.date||'Unknown')+'</span>';
+      html+='<span style="font-size:12px;color:var(--muted)">'+a.attended+'/'+total+' <strong style="color:'+(pct>=70?'var(--green)':pct>=40?'var(--amber)':'var(--red)')+'">'+pct+'%</strong></span>';
+      html+='</div>';
+      if(a.records&&a.records.length>0){
+        var present=a.records.filter(function(r){return r.attended;});
+        var absent=a.records.filter(function(r){return !r.attended;});
+        if(absent.length>0){
+          html+='<div style="margin-top:4px;font-size:11px;color:var(--red)">Absent: '+absent.map(function(r){return esc(r.firstName+' '+r.lastName);}).join(', ')+'</div>';
+        }
+      }
+      html+='</div>';
+    });
+    html+='</details>';
+  }
+
+  // Leaders section
+  if(leaders.length>0){
+    html+='<div style="margin-bottom:16px"><div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px">Leaders</div>';
+    leaders.forEach(function(l){
+      html+='<div style="display:flex;align-items:center;gap:10px;padding:6px 0">';
+      if(l.avatarUrl){
+        html+='<img src="'+esc(l.avatarUrl)+'" style="width:32px;height:32px;border-radius:50%;object-fit:cover;border:2px solid var(--brand)">';
+      }else{
+        html+='<div style="width:32px;height:32px;border-radius:50%;background:var(--brand);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700">'+(l.firstName?l.firstName[0]:'')+(l.lastName?l.lastName[0]:'')+'</div>';
+      }
+      html+='<div><div style="font-size:13px;font-weight:600;color:var(--text)">'+esc(l.firstName+' '+l.lastName)+'</div>';
+      html+='<div style="font-size:11px;color:var(--brand)">Leader'+(l.joinedAt?' · Joined '+l.joinedAt:'')+'</div></div>';
+      html+='</div>';
+    });
+    html+='</div>';
+  }
+
+  // Members section
+  html+='<div><div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px">Members <span style="color:var(--muted);font-weight:400">('+members.length+')</span></div>';
+  if(members.length===0){
+    html+='<div style="color:var(--muted);font-size:13px">No members found</div>';
+  }else{
+    members.forEach(function(m){
+      html+='<div style="display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid var(--border)">';
+      if(m.avatarUrl){
+        html+='<img src="'+esc(m.avatarUrl)+'" style="width:28px;height:28px;border-radius:50%;object-fit:cover">';
+      }else{
+        html+='<div style="width:28px;height:28px;border-radius:50%;background:var(--surface);color:var(--muted);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;border:1px solid var(--border)">'+(m.firstName?m.firstName[0]:'')+(m.lastName?m.lastName[0]:'')+'</div>';
+      }
+      html+='<div style="font-size:13px;color:var(--text)">'+esc(m.firstName+' '+m.lastName)+'</div>';
+      if(m.joinedAt)html+='<div style="margin-left:auto;font-size:11px;color:var(--muted)">'+m.joinedAt+'</div>';
+      html+='</div>';
+    });
+  }
+  html+='</div>';
+
+  panel.innerHTML=html;
+}
+
+function renderLifeGroupsTab(){
+  var el=$('content');
+  if(!el)return;
+
+  if(lgLoading||!LG){
+    el.innerHTML='<div style="text-align:center;padding:80px 0">'+
+      '<div style="display:inline-block;width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--brand);border-radius:50%;animation:spin 1s linear infinite"></div>'+
+      '<div style="margin-top:14px;color:var(--muted);font-size:14px">Loading Life Groups…</div>'+
+    '</div>';
+    return;
+  }
+  if(LG.error){
+    el.innerHTML='<div class="panel"><div style="color:var(--red);font-weight:600">Error</div><div style="color:var(--muted);font-size:13px;margin-top:6px">'+esc(LG.error)+'</div></div>';
+    return;
+  }
+
+  var s=LG.stats||{};
+  var groups=LG.groups||[];
+  var meetingDays=LG.meetingDays||[];
+
+  // Connection rate vs active congregation (from People tab if loaded, else estimate)
+  var activeTotal=P&&P.growth?P.growth.totalActive:0;
+  var connectionRate=activeTotal>0?Math.round(s.totalEnrolled/activeTotal*100):null;
+
+  // Stat grid
+  var statsHtml='<div class="stat-grid" style="margin-bottom:20px">'+
+    statCard({label:'Active Life Groups',value:fmt(s.total),sub:s.healthyGroups+' healthy · '+s.largeGroups+' large · '+s.smallGroups+' small',accent:'var(--brand)',featured:true})+
+    statCard({label:'Total Enrolled',value:fmt(s.totalEnrolled),sub:'People in at least one life group',accent:'var(--green)'})+
+    statCard({label:'Avg Group Size',value:fmt(s.avgSize),sub:'Target: 8–20 per group',accent:'var(--purple)'})+
+    (connectionRate!==null
+      ? statCard({label:'Connection Rate',value:connectionRate+'%',sub:fmt(s.totalEnrolled)+' of '+fmt(activeTotal)+' active members',accent:'var(--teal)'})
+      : statCard({label:'Groups by Day',value:meetingDays.length,sub:(meetingDays[0]||{day:''}).day+' is most popular',accent:'var(--amber)'}))+
+  '</div>';
+
+  // Meeting day breakdown with click-to-expand
+  var dayBreakdownHtml='';
+  if(meetingDays.length>0){
+    var maxDay=Math.max.apply(null,meetingDays.map(function(d){return d.count;}));
+    var dayBars=meetingDays.map(function(d){
+      var pct=Math.round(d.count/maxDay*100);
+      var isExpanded=lgExpandedDay===d.day;
+      var row='<div style="cursor:pointer" onclick="toggleDayExpand(\''+esc(d.day)+'\')">'+
+        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:'+(isExpanded?'6':'8')+'px">'+
+        '<div style="width:90px;font-size:13px;color:'+(isExpanded?'var(--brand)':'var(--muted)')+';flex-shrink:0;font-weight:'+(isExpanded?'700':'400')+'">'+
+          '<span style="font-size:10px;margin-right:4px">'+(isExpanded?'▼':'▶')+'</span>'+esc(d.day)+'</div>'+
+        '<div style="flex:1;height:8px;background:var(--surface);border-radius:99px;overflow:hidden;border:1px solid var(--border)">'+
+          '<div style="height:100%;width:'+pct+'%;background:var(--brand);border-radius:99px"></div>'+
+        '</div>'+
+        '<div style="width:28px;text-align:right;font-size:13px;font-weight:700;font-family:\'DM Mono\',monospace;color:var(--text)">'+d.count+'</div>'+
+      '</div></div>';
+      // Expanded group list
+      if(isExpanded&&d.groups){
+        row+='<div style="margin:0 0 12px 18px;padding:8px 12px;background:var(--surface);border-radius:8px;border:1px solid var(--border)">';
+        d.groups.forEach(function(g){
+          row+='<div style="display:flex;align-items:center;gap:8px;padding:4px 0;cursor:pointer" onclick="event.stopPropagation();openGroupDetail(\''+g.id+'\',\''+esc(g.name.replace(/'/g,"\\'"))+'\')">';
+          row+='<div style="width:24px;height:24px;border-radius:50%;background:var(--brand-light);color:var(--brand-dark);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;flex-shrink:0">'+g.members+'</div>';
+          row+='<div style="font-size:12px;color:var(--text);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(g.name)+'</div>';
+          row+='<div style="font-size:10px;color:var(--brand);flex-shrink:0">View →</div>';
+          row+='</div>';
+        });
+        row+='</div>';
+      }
+      return row;
+    }).join('');
+    dayBreakdownHtml='<div class="panel">'+
+      '<div class="panel-title">Groups by Meeting Day</div>'+
+      '<div class="panel-sub" style="margin-bottom:14px">Click a day to see groups</div>'+
+      dayBars+
+    '</div>';
+  }
+
+  // Build filter dimension values from actual data
+  var allDays={},allGenders={},allSizes={};
+  groups.forEach(function(g){
+    var day=lgDetectDay(g.schedule); allDays[day]=(allDays[day]||0)+1;
+    var gen=lgDetectGender(g.name); allGenders[gen]=(allGenders[gen]||0)+1;
+    var sz=lgDetectSize(g.members); allSizes[sz]=(allSizes[sz]||0)+1;
+  });
+
+  function filterPills(type,values){
+    var active=lgFilters[type];
+    var keys=Object.keys(values).sort();
+    if(type==='day') keys=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Unscheduled'].filter(function(d){return values[d];});
+    if(type==='size') keys=['Small','Healthy','Large'].filter(function(d){return values[d];});
+    return keys.map(function(k){
+      var isActive=active.indexOf(k)>=0;
+      return '<button onclick="toggleLgFilter(\''+type+'\',\''+k+'\')" style="'+
+        'display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:99px;font-size:12px;cursor:pointer;border:1px solid;font-family:inherit;transition:all .15s;'+
+        (isActive?'background:var(--brand);color:#fff;border-color:var(--brand);':'background:var(--surface);color:var(--muted);border-color:var(--border);')+
+        '">'+esc(k)+' <span style="opacity:.65;font-size:11px">'+values[k]+'</span></button>';
+    }).join('');
+  }
+  var hasAnyFilter=lgFilters.day.length>0||lgFilters.gender.length>0||lgFilters.size.length>0;
+  var filterBarHtml='<div style="margin-bottom:12px">'+
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'+
+      '<span style="font-size:12px;font-weight:600;color:var(--text)">Filters</span>'+
+      (hasAnyFilter?'<button onclick="clearLgFilters()" style="font-size:11px;color:var(--brand);background:none;border:none;cursor:pointer;font-family:inherit;text-decoration:underline">Clear all</button>':'')+
+    '</div>'+
+    '<div style="margin-bottom:6px"><span style="font-size:11px;color:var(--muted);margin-right:6px">Day:</span>'+filterPills('day',allDays)+'</div>'+
+    '<div style="margin-bottom:6px"><span style="font-size:11px;color:var(--muted);margin-right:6px">Gender:</span>'+filterPills('gender',allGenders)+'</div>'+
+    '<div><span style="font-size:11px;color:var(--muted);margin-right:6px">Size:</span>'+filterPills('size',allSizes)+'</div>'+
+  '</div>';
+
+  // Filtered group list (search + multi-select filters)
+  var filtered=groups.filter(function(g){
+    if(lgSearchQuery){
+      var q=lgSearchQuery.toLowerCase();
+      if(g.name.toLowerCase().indexOf(q)<0&&!(g.schedule&&g.schedule.toLowerCase().indexOf(q)>=0)) return false;
+    }
+    if(lgFilters.day.length>0&&lgFilters.day.indexOf(lgDetectDay(g.schedule))<0) return false;
+    if(lgFilters.gender.length>0&&lgFilters.gender.indexOf(lgDetectGender(g.name))<0) return false;
+    if(lgFilters.size.length>0&&lgFilters.size.indexOf(lgDetectSize(g.members))<0) return false;
+    return true;
+  });
+
+  var groupRows=filtered.slice(0,80).map(function(g){
+    var h=lgGroupHealth(g.members);
+    var gender=lgDetectGender(g.name);
+    var schedParts=(g.schedule||'').split('|');
+    var schedMain=(schedParts[0]||'').trim();
+    var schedSub=(schedParts[1]||'').trim();
+    var genderColor=gender==='Women'?'var(--purple)':gender==='Men'?'var(--accent)':gender==='Co-Ed'?'var(--teal)':'var(--muted)';
+    return'<div class="vol-row" style="cursor:pointer" onclick="openGroupDetail(\''+g.id+'\',\''+esc(g.name.replace(/'/g,"\\'"))+'\')">'+
+      '<div class="vol-avatar" style="background:var(--brand-light);color:var(--brand-dark);font-size:11px;font-weight:700">'+
+        fmt(g.members)+
+      '</div>'+
+      '<div style="flex:1;min-width:0">'+
+        '<div class="vol-name">'+esc(g.name)+'</div>'+
+        '<div class="vol-meta">'+
+          (schedMain?esc(schedMain):'No schedule set')+
+          (schedSub?' &nbsp;·&nbsp; <span style="color:var(--muted2)">'+esc(schedSub)+'</span>':'')+
+        '</div>'+
+      '</div>'+
+      '<div style="display:flex;align-items:center;gap:6px;flex-shrink:0">'+
+        '<span class="pill" style="background:'+genderColor+'18;color:'+genderColor+';border:1px solid '+genderColor+'33;font-size:11px">'+gender+'</span>'+
+        '<span class="pill" style="background:'+h.color+'22;color:'+h.color+';border:1px solid '+h.color+'44">'+h.label+'</span>'+
+        '<span style="color:var(--brand);font-size:12px">View →</span>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+
+  var groupListHtml='<div class="panel">'+
+    '<div class="vol-list-header">'+
+      '<div><div class="panel-title">All Life Groups</div><div class="panel-sub" style="margin-bottom:0">'+
+        (hasAnyFilter?filtered.length+' of '+groups.length+' groups':groups.length+' groups')+
+        ' · '+fmt(hasAnyFilter?filtered.reduce(function(s,g){return s+g.members;},0):s.totalEnrolled)+' enrolled</div></div>'+
+      '<button class="btn-sm" onclick="loadLifeGroupsData(true)">↻ Refresh</button>'+
+    '</div>'+
+    filterBarHtml+
+    '<div class="vol-search-wrap" style="margin-top:4px">'+
+      '<input class="vol-search" type="text" placeholder="Search by group name or schedule…" value="'+esc(lgSearchQuery)+'" oninput="lgSearchQuery=this.value;renderLifeGroupsTab()"/>'+
+    '</div>'+
+    (filtered.length===0
+      ?'<div style="color:var(--muted);text-align:center;padding:24px 0;font-size:13px">No groups match your filters</div>'
+      :groupRows)+
+    (filtered.length>80?'<div style="color:var(--muted);font-size:12px;text-align:center;padding:10px 0">Showing 80 of '+filtered.length+' — search to filter</div>':'')+
+  '</div>';
+
+  el.innerHTML=statsHtml+
+    '<div style="display:grid;grid-template-columns:280px 1fr;gap:14px;margin-bottom:14px;">'+
+      dayBreakdownHtml+groupListHtml+
+    '</div>';
+}
+
+async function loadPeopleData(force){
+  if(peopleLoading)return;
+  if(P&&!force)return;
+  peopleLoading=true;
+  renderPeopleTab(); // show loading state immediately
+  try{
+    var r=await fetch('/people-data'+(force?'?refresh=1':''));
+    P=await r.json();
+    if(P.error)throw new Error(P.error);
+  }catch(e){P={error:e.message};}
+  finally{peopleLoading=false;}
+  if(activeTab==='people')renderPeopleTab();
+}
+
+// ── UI helpers ─────────────────────────────────────────────────────────────────
+function hideModal(){$('modal-overlay').style.display='none';}
+function openModal(){$('modal-overlay').style.display='flex';}
+function setLoading(on){
+  $('loading').style.display=on?'block':'none';
+  if(on){$('progress-bar-fill').style.width='0%';$('progress-pct').textContent='0%';$('progress-step').textContent='Connecting…';}
+}
+function showError(m){var b=$('error-banner');b.innerHTML='';var s=document.createElement('strong');s.textContent='Error: ';b.appendChild(s);b.appendChild(document.createTextNode(m));b.style.display='block';}
+function switchTab(t){
+  activeTab=t;
+  document.querySelectorAll('.nav-item').forEach(function(el){
+    el.classList.toggle('active',el.getAttribute('data-tab')===t);
+  });
+  var titles={overview:'Dashboard',citykids:'City Kids',volunteers:'Volunteers',attendance:'Attendance',teams:'Teams',people:'People',lifegroups:'Life Groups'};
+  var ptEl=$('page-title');if(ptEl)ptEl.textContent=titles[t]||'Dashboard';
+  if(t==='people'&&!isDemo)loadPeopleData();
+  else if(t==='lifegroups'&&!isDemo)loadLifeGroupsData();
+  else renderContent();
+}
+function renderAll(){
+  $('error-banner').style.display='none';
+  $('btn-refresh').style.display=isDemo?'none':'inline-block';
+  $('demo-badge').style.display=isDemo?'inline-block':'none';
+  var freshLabel='';
+  if(!isDemo&&D.fetchedAt){
+    var fetched=new Date(D.fetchedAt);
+    var ago=Math.round((Date.now()-fetched.getTime())/60000);
+    freshLabel=ago<1?' · just now':' · '+ago+'m ago';
+  }
+  $('hdr-sub').textContent=(isDemo?'Demo Data':'Live · Planning Center')+' · '+new Date().toLocaleDateString()+' '+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})+freshLabel;
+  renderContent();
+}
+
+// ── Per-chart range selector system ──────────────────────────────────────────
+// Each chart (attendance, sched) can have its own time range independently.
+// chartDataSets stores the data for each chart; defaults to the main D.
+var chartDataSets={attendance:null,sched:null};
+var chartWeeks={attendance:1,sched:8,decisions:4,volunteers:4,firsttimers:4,kidscheckins:4,coverage:4,rostertrend:4};
+var chartLoading={};
+var rangeLabels={1:'Last Week',4:'4 Weeks',8:'8 Weeks',13:'3 Months',26:'6 Months',52:'1 Year'};
+// Service time colors for attendance breakdown
+var serviceTimeColors={
+  '9:00 AM':'var(--accent)',
+  '10:30 AM':'var(--green)',
+  '12:30 PM':'var(--purple)',
+  '11:00 AM':'var(--amber)',
+  '8:00 AM':'#60a5fa',
+};
+var defaultServiceColor='var(--muted)';
+function getServiceColor(label){return serviceTimeColors[label]||defaultServiceColor;}
+// Sort service times chronologically
+function sortServiceTimes(keys){
+  return keys.slice().sort(function(a,b){
+    var pa=Date.parse('2000-01-01 '+a), pb=Date.parse('2000-01-01 '+b);
+    if(isNaN(pa))pa=9999;if(isNaN(pb))pb=9999;
+    return pa-pb;
+  });
+}
+
+function initChartData(){
+  // Initialize chart datasets from the main D data
+  chartDataSets.attendance=D;
+  chartDataSets.sched=D;
+  chartDataSets.decisions=D;
+  chartDataSets.volunteers=D;
+  chartDataSets.firsttimers=D;
+  chartDataSets.kidscheckins=D;
+  chartDataSets.coverage=D;
+  chartDataSets.rostertrend=D;
+  chartWeeks.attendance=1;  // Default attendance to Last Week
+  chartWeeks.sched=currentWeeks;
+  chartWeeks.decisions=currentWeeks;
+  chartWeeks.volunteers=currentWeeks;
+  chartWeeks.firsttimers=currentWeeks;
+  chartWeeks.kidscheckins=currentWeeks;
+  chartWeeks.coverage=currentWeeks;
+  chartWeeks.rostertrend=currentWeeks;
+}
+
+function chartRangeDropdown(chartId){
+  var cw=chartWeeks[chartId]||8;
+  var lbl=rangeLabels[cw]||(cw+' Weeks');
+  return '<div class="range-dropdown" id="chart-dd-'+chartId+'" style="position:relative">'+
+    '<button class="range-toggle" onclick="toggleChartMenu(\''+chartId+'\')" style="padding:4px 10px;font-size:12px;min-width:110px">'+
+      '<span id="chart-label-'+chartId+'">'+lbl+'</span>'+
+      '<span class="caret">▼</span>'+
+    '</button>'+
+    '<div class="range-menu" style="right:0;left:auto">'+
+      '<div class="range-option'+(cw===1?' active':'')+'" data-weeks="1" onclick="setChartRange(\''+chartId+'\',1)">Last Week</div>'+
+      '<div class="range-option'+(cw===4?' active':'')+'" data-weeks="4" onclick="setChartRange(\''+chartId+'\',4)">4 Weeks</div>'+
+      '<div class="range-option'+(cw===8?' active':'')+'" data-weeks="8" onclick="setChartRange(\''+chartId+'\',8)">8 Weeks</div>'+
+      '<div class="range-option'+(cw===13?' active':'')+'" data-weeks="13" onclick="setChartRange(\''+chartId+'\',13)">3 Months</div>'+
+      '<div class="range-option'+(cw===26?' active':'')+'" data-weeks="26" onclick="setChartRange(\''+chartId+'\',26)">6 Months</div>'+
+      '<div class="range-option'+(cw===52?' active':'')+'" data-weeks="52" onclick="setChartRange(\''+chartId+'\',52)">1 Year</div>'+
+    '</div>'+
+  '</div>';
+}
+
+function toggleChartMenu(chartId){
+  var dd=$('chart-dd-'+chartId);
+  if(dd)dd.classList.toggle('open');
+}
+
+// Close any open chart dropdown when clicking outside
+document.addEventListener('click',function(e){
+  if(!e.target.closest('.range-dropdown')){
+    document.querySelectorAll('.range-dropdown.open').forEach(function(el){el.classList.remove('open');});
+  }
+});
+
+async function setChartRange(chartId,weeks){
+  // Close dropdown
+  var dd=$('chart-dd-'+chartId);
+  if(dd)dd.classList.remove('open');
+
+  if(isDemo)return;
+  weeks=Math.max(1,Math.min(104,weeks));
+  chartWeeks[chartId]=weeks;
+
+  // If it's the same as current base data, just use D
+  if(weeks===currentWeeks){
+    chartDataSets[chartId]=D;
+    renderChartOnly(chartId);
+    return;
+  }
+
+  // Show loading state on the chart
+  var chartEl=$(chartId+'-chart');
+  if(chartEl) chartEl.innerHTML='<div style="text-align:center;padding:30px 0;color:var(--muted)"><div style="display:inline-block;width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--brand);border-radius:50%;animation:spin 1s linear infinite;margin-bottom:8px"></div><br>Loading '+(rangeLabels[weeks]||weeks+' weeks')+'…</div>';
+
+  try{
+    var dr=await fetch('/data?weeks='+weeks);
+    var newData=await dr.json();
+    if(newData.error)throw new Error(newData.error);
+    chartDataSets[chartId]=newData;
+    renderChartOnly(chartId);
+  }catch(e){
+    if(chartEl){var d=document.createElement('div');d.style.cssText='color:var(--red);padding:12px';d.textContent='Error loading data: '+e.message;chartEl.innerHTML='';chartEl.appendChild(d);}
+  }
+}
+
+function renderChartOnly(chartId){
+  var cd=chartDataSets[chartId];
+  if(!cd)return;
+  var lbl=rangeLabels[chartWeeks[chartId]]||(chartWeeks[chartId]+' Weeks');
+  var labelEl=$('chart-label-'+chartId);
+  if(labelEl) labelEl.textContent=lbl;
+
+  if(chartId==='attendance'){
+    var subEl=$('attendance-sub');
+    // Build datasets from attendanceByService breakdown
+    var abs=cd.attendanceByService||{};
+    var svcKeys=sortServiceTimes(Object.keys(abs).filter(function(k){return k!=='Unknown';}));
+    var datasets=[];
+    if(svcKeys.length>0){
+      svcKeys.forEach(function(k){
+        datasets.push({label:k,data:abs[k],color:getServiceColor(k)});
+      });
+    } else {
+      datasets=[{label:'Total',data:cd.attendance,color:'var(--accent)'}];
+    }
+    // Build legend
+    var legend=datasets.map(function(ds){return '<span style="color:'+ds.color+'">■</span> '+ds.label;}).join(' &nbsp;');
+    if(subEl) subEl.innerHTML=legend+' · '+(cd.grouping==='monthly'?'Monthly':'Weekly')+' · '+cd.labels.length+' '+(cd.grouping==='monthly'?'months':'weeks')+' <span style="color:var(--muted);font-size:11px">(excludes evening services)</span>';
+    var chartEl=$('attendance-chart');
+    if(chartEl) chartEl.innerHTML=barChart(cd.labels,datasets,180,{fullWidth:true});
+  } else if(chartId==='sched'){
+    var subEl=$('sched-sub');
+    if(subEl) subEl.innerHTML='<span style="color:var(--accent)">■</span> Scheduled &nbsp;<span style="color:var(--green)">■</span> Confirmed · '+cd.labels.length+' '+(cd.grouping==='monthly'?'months':'weeks');
+    var chartEl=$('sched-chart');
+    if(chartEl) chartEl.innerHTML=barChart(cd.labels,[
+      {label:'Scheduled',data:cd.scheduled,color:'var(--accent)'},
+      {label:'Confirmed',data:cd.confirmed,color:'var(--green)'},
+    ],180,{fullWidth:true});
+  } else if(chartId==='decisions'){
+    var decData=cd.decisions||cd.labels.map(function(){return 0;});
+    var decTotal=decData.reduce(function(s,x){return s+x;},0);
+    var subEl=$('decisions-sub');
+    if(subEl) subEl.innerHTML='<span style="color:var(--purple)">■</span> Salvations &amp; commitments · '+fmt(decTotal)+' total in range';
+    var chartEl=$('decisions-chart');
+    if(chartEl) chartEl.innerHTML=barChart(cd.labels,[{label:'Decisions',data:decData,color:'var(--purple)'}],160,{fullWidth:true});
+  } else if(chartId==='volunteers'){
+    var subEl=$('volunteers-sub');
+    if(subEl) subEl.innerHTML='<span style="color:var(--green)">■</span> Unique volunteers serving each week · '+cd.labels.length+' '+(cd.grouping==='monthly'?'months':'weeks');
+    var chartEl=$('volunteers-chart');
+    if(chartEl) chartEl.innerHTML=barChart(cd.labels,[{label:'Volunteers',data:cd.uniqueVolunteers,color:'var(--green)'}],160,{fullWidth:true});
+  } else if(chartId==='firsttimers'){
+    var subEl=$('firsttimers-sub');
+    if(subEl) subEl.innerHTML='People serving in "First Serve Volunteer" position on the Next Step Team';
+    var chartEl=$('firsttimers-chart');
+    if(chartEl) chartEl.innerHTML=barChart(cd.labels,[{label:'First-Timers',data:cd.firstTimers,color:'var(--purple)'}],null,{fullWidth:true});
+  } else if(chartId==='kidscheckins'){
+    var ckbs=cd.kidsCheckinByService||{};
+    var ckKeys=sortServiceTimes(Object.keys(ckbs));
+    var ciDatasets=[];
+    ckKeys.forEach(function(k){ciDatasets.push({label:k,data:ckbs[k],color:getServiceColor(k)});});
+    if(ciDatasets.length===0) ciDatasets=[{label:'Total',data:cd.kidsCheckinCounts||[],color:'var(--green)'}];
+    var ciLegend=ciDatasets.map(function(ds){return '<span style="color:'+ds.color+'">■</span> '+ds.label;}).join(' &nbsp;');
+    var subEl=$('kidscheckins-sub');
+    if(subEl) subEl.innerHTML=ciLegend+' · Individual kids checked in per service';
+    var chartEl=$('kidscheckins-chart');
+    if(chartEl) chartEl.innerHTML=barChart(cd.labels,ciDatasets,160,{fullWidth:true});
+  } else if(chartId==='coverage'){
+    var tw=cd.teamsWeekly||[];
+    var teamColors=['var(--accent)','var(--green)','var(--purple)','var(--amber)','var(--teal)','var(--red)','#60a5fa','#f472b6'];
+    var topTeams=tw.slice(0,8);
+    var trendDatasets=topTeams.map(function(t,i){return{label:t.name,data:t.coverageByWeek,color:teamColors[i%teamColors.length]};});
+    var legendHtml=topTeams.map(function(t,i){return '<span style="color:'+teamColors[i%teamColors.length]+'">■</span> '+esc(t.name);}).join(' &nbsp;');
+    var subEl=$('coverage-sub');
+    if(subEl) subEl.innerHTML=legendHtml;
+    var chartEl=$('coverage-chart');
+    if(chartEl) chartEl.innerHTML=barChart(cd.labels,trendDatasets,180,{fullWidth:true});
+  } else if(chartId==='rostertrend'){
+    var tw=cd.teamsWeekly||[];
+    var rosterColors=['var(--accent)','var(--green)','var(--purple)','var(--amber)','var(--teal)','var(--red)'];
+    var topRoster=tw.slice(0,6);
+    var rosterDatasets=topRoster.map(function(t,i){return{label:t.name,data:t.scheduledByWeek,color:rosterColors[i%rosterColors.length]};});
+    var rosterLegend=topRoster.map(function(t,i){return '<span style="color:'+rosterColors[i%rosterColors.length]+'">■</span> '+esc(t.name);}).join(' &nbsp;');
+    var subEl=$('rostertrend-sub');
+    if(subEl) subEl.innerHTML='How many volunteers were scheduled each week per team &nbsp;'+rosterLegend;
+    var chartEl=$('rostertrend-chart');
+    if(chartEl) chartEl.innerHTML=barChart(cd.labels,rosterDatasets,160,{fullWidth:true});
+  }
+}
+
+// ── Detail modal ───────────────────────────────────────────────────────────────
+function openDetail(wi,idx){
+  var v=D.weeklyMultiServers[wi][idx];if(!v)return;
+  $('detail-name').textContent=v.name;
+  $('detail-sub').textContent=
+    v.appearances+' slot'+(v.appearances===1?'':'s')+' · '+
+    (v.teamCount===1 ? v.teams[0] : v.teamCount+' teams: '+v.teams.join(', '));
+  var rows=v.schedules.map(function(s){
+    var sc=statusColor(s.status);
+    var timeLabel=s.serviceTime ? '<span style="color:var(--accent);font-weight:500;margin-left:4px;font-size:12px">('+esc(s.serviceTime)+')</span>' : '';
+    return '<tr><td style="font-weight:500;padding-right:12px">'+esc(s.date)+'</td>'+
+      '<td style="color:var(--muted);padding-right:12px">'+esc(s.serviceType)+'</td>'+
+      '<td style="padding-right:12px">'+esc(s.team)+timeLabel+'</td>'+
+      '<td style="color:var(--muted);padding-right:12px">'+s.position+'</td>'+
+      '<td><span class="sbadge" style="background:'+sc+'22;color:'+sc+';border:1px solid '+sc+'44">'+statusLabel(s.status)+'</span></td></tr>';
+  }).join('');
+  $('detail-body').innerHTML='<table><thead><tr><th>Date</th><th>Service Type</th><th>Team</th><th>Position</th><th>Status</th></tr></thead><tbody>'+rows+'</tbody></table>';
+  $('detail-overlay').style.display='flex';
+}
+function closeDetail(){$('detail-overlay').style.display='none';}
+function maybeCloseDetail(e){if(e.target===$('detail-overlay'))closeDetail();}
+
+// ── Volunteer detail side panel ────────────────────────────────────────────────
+
+function openVolDetail(v){
+  currentVolDetail=v;
+  var color=avatarColor(v.name);
+  // Avatar
+  var av=$('vd-avatar');
+  av.style.background=color+'22';av.style.color=color;av.style.border='1px solid '+color+'44';
+  av.textContent=initials(v.name);
+  // Header
+  $('vd-name').textContent=v.name;
+  $('vd-teams').textContent=v.teams.length?v.teams.join(' · '):'No team data';
+  // Stats — use week-level participation rate (showed up ≥1× that week) not slot fill rate
+  var rate=participationRate(v);
+  var declined=v.declinedByWeek?v.declinedByWeek.reduce(function(s,x){return s+x;},0):0;
+  var rc=rate>=80?'var(--green)':rate>=60?'var(--amber)':'var(--red)';
+  $('vd-stats').innerHTML=
+    '<div class="vd-stat"><div class="vd-stat-label">Served</div><div class="vd-stat-value" style="color:'+color+'">'+v.totalConfirmed+'</div></div>'+
+    '<div class="vd-stat"><div class="vd-stat-label">Participation</div><div class="vd-stat-value" style="color:'+rc+'">'+rate+'%</div></div>'+
+    '<div class="vd-stat"><div class="vd-stat-label">Declined</div><div class="vd-stat-value" style="color:var(--muted)">'+declined+'</div></div>';
+  // Range tabs — determine available options from data length
+  var N=D.labels.length;
+  var ranges=[];
+  if(N>=4)ranges.push({label:'1 mo',wks:4});
+  if(N>=13)ranges.push({label:'3 mo',wks:13});
+  if(N>=26)ranges.push({label:'6 mo',wks:26});
+  if(N>=52)ranges.push({label:'1 yr',wks:52});
+  if(ranges.length===0)ranges.push({label:'All',wks:N});
+  else ranges.push({label:'All',wks:N});
+  // Default: 3-month if available, else all
+  var defaultRange=ranges.find(function(r){return r.wks===13;})||ranges[ranges.length-1];
+  volDetailRange=defaultRange.wks;
+  $('vd-range-tabs').innerHTML=ranges.map(function(r){
+    return'<button class="vd-range-btn'+(r.wks===volDetailRange?' active':'')+'" onclick="setVolDetailRange('+r.wks+',this)">'+r.label+'</button>';
+  }).join('');
+  renderVolDetailChart();
+  var overlay=$('vol-detail-overlay');
+  overlay.style.display='flex';
+}
+
+function setVolDetailRange(wks,btn){
+  volDetailRange=wks;
+  document.querySelectorAll('.vd-range-btn').forEach(function(b){b.classList.remove('active');});
+  btn.classList.add('active');
+  renderVolDetailChart();
+}
+
+function renderVolDetailChart(){
+  if(!currentVolDetail||!D)return;
+  var v=currentVolDetail;
+  var N=D.labels.length;
+  var wks=Math.min(volDetailRange,N);
+  var startIdx=N-wks;
+  var labels=D.labels.slice(startIdx);
+  var confirmed=v.confirmedByWeek.slice(startIdx);
+  var scheduled=v.scheduledByWeek.slice(startIdx);
+  var color=avatarColor(v.name);
+  var maxVal=Math.max.apply(null,scheduled.concat([1]));
+  // Build mini bar chart
+  var bars=labels.map(function(lbl,i){
+    var schPct=maxVal>0?Math.round(scheduled[i]/maxVal*100):0;
+    var conPct=scheduled[i]>0?Math.round(confirmed[i]/scheduled[i]*100):0;
+    var barColor=confirmed[i]>0?color:'var(--border)';
+    return'<div class="vd-week-row">'+
+      '<div class="vd-week-label">'+esc(lbl)+'</div>'+
+      '<div class="vd-bar-wrap"><div class="vd-bar" style="width:'+schPct+'%;background:var(--border)"></div></div>'+
+      '<div class="vd-bar-wrap" style="position:relative;margin-left:-100%;"><div class="vd-bar" style="width:'+conPct+'%;background:'+barColor+'"></div></div>'+
+      '<div class="vd-bar-count" style="color:'+(confirmed[i]>0?color:'var(--muted2)')+'">'+confirmed[i]+'</div>'+
+    '</div>';
+  });
+  // Overlay bars: scheduled (dim) behind confirmed (bright)
+  var barRows=labels.map(function(lbl,i){
+    var schW=maxVal>0?Math.round(scheduled[i]/maxVal*100):0;
+    var conW=scheduled[i]>0?Math.round(confirmed[i]/scheduled[i]*schW):0;
+    var served=confirmed[i]>0;
+    return'<div class="vd-week-row">'+
+      '<div class="vd-week-label">'+esc(lbl)+'</div>'+
+      '<div class="vd-bar-wrap" style="position:relative">'+
+        '<div class="vd-bar" style="width:'+schW+'%;background:var(--surface);border:1px solid var(--border);position:absolute;top:0;left:0;height:100%"></div>'+
+        '<div class="vd-bar" style="width:'+conW+'%;background:'+color+';position:relative;z-index:1"></div>'+
+      '</div>'+
+      '<div class="vd-bar-count" style="color:'+(served?color:'var(--muted2)')+'">'+
+        (confirmed[i]>0?confirmed[i]:(scheduled[i]>0?'—':'·'))+
+      '</div>'+
+    '</div>';
+  });
+  $('vd-chart').innerHTML=
+    '<div style="display:flex;gap:14px;margin-bottom:10px;font-size:11px;color:var(--muted)">'+
+      '<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:'+color+';margin-right:4px"></span>Confirmed</span>'+
+      '<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--surface);border:1px solid var(--border);margin-right:4px"></span>Scheduled</span>'+
+    '</div>'+barRows.join('');
+  // Week summary table
+  var weeksWithActivity=labels.map(function(lbl,i){return{lbl:lbl,con:confirmed[i],sch:scheduled[i]};}).filter(function(w){return w.sch>0;});
+  $('vd-weeks').innerHTML=weeksWithActivity.length?
+    weeksWithActivity.map(function(w){
+      var rate=w.sch?Math.round(w.con/w.sch*100):0;
+      var rc=rate>=80?'var(--green)':rate>=50?'var(--amber)':'var(--red)';
+      return'<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid rgba(29,35,64,.6)">'+
+        '<span style="font-size:13px;color:var(--muted)">'+esc(w.lbl)+'</span>'+
+        '<span style="font-size:13px;font-family:\'DM Mono\',monospace"><span style="color:'+color+';font-weight:700">'+w.con+'</span><span style="color:var(--muted2)"> / '+w.sch+'</span></span>'+
+        '<span class="pill" style="background:'+rc+'15;color:'+rc+';border:1px solid '+rc+'30">'+rate+'%</span>'+
+      '</div>';
+    }).join(''):
+    '<div style="color:var(--muted);font-size:13px;text-align:center;padding:20px 0">No scheduled activity in this period</div>';
+}
+
+function closeVolDetail(){
+  $('vol-detail-overlay').style.display='none';
+  currentVolDetail=null;
+}
+function maybeCloseVolDetail(e){if(e.target===$('vol-detail-overlay'))closeVolDetail();}
+
+// ── Bar chart ──────────────────────────────────────────────────────────────────
+// opts: { fullWidth:bool, showValues:bool, showYAxis:bool }
+function barChart(labels,datasets,height,opts){
+  height=height||160;
+  opts=opts||{};
+  var showYAxis=opts.showYAxis!==false;
+  var showValues=opts.showValues!==false;
+  var fullWidth=!!opts.fullWidth;
+
+  var maxVal=Math.max.apply(null,datasets.reduce(function(a,d){return a.concat(d.data);},[]).concat([1]));
+
+  var yAxisW=showYAxis?48:0;
+  var topPad=showValues?22:4;
+  var botPad=28;
+
+  var barW=fullWidth?Math.max(20,Math.min(44,Math.floor(700/labels.length/datasets.length))):14;
+  var barGap=2;
+  var groupW=barW*datasets.length+barGap*(datasets.length-1);
+  var groupGap=fullWidth?Math.max(20,Math.floor(500/labels.length)):10;
+  var chartW=labels.length*(groupW+groupGap);
+  var totalW=yAxisW+chartW;
+  var svgH=height+topPad+botPad;
+
+  var wrapStyle=fullWidth?'width:100%':'overflow-x:auto';
+  var svgAttrs=fullWidth
+    ?'width="100%" viewBox="0 0 '+totalW+' '+svgH+'" preserveAspectRatio="xMidYMid meet"'
+    :'width="'+totalW+'" height="'+svgH+'"';
+  var svg='<div style="'+wrapStyle+'"><svg '+svgAttrs+'>';
+
+  // Y-axis gridlines and labels
+  if(showYAxis){
+    var ticks=5;
+    for(var t=0;t<=ticks;t++){
+      var tickVal=Math.round(maxVal/ticks*t);
+      var tickY=topPad+height-Math.round(t/ticks*height);
+      svg+='<line x1="'+yAxisW+'" y1="'+tickY+'" x2="'+(yAxisW+chartW)+'" y2="'+tickY+'" stroke="var(--border)" stroke-width="1" opacity=".4"/>';
+      svg+='<text x="'+(yAxisW-8)+'" y="'+(tickY+4)+'" text-anchor="end" fill="var(--muted)" font-size="10" font-family="DM Mono,monospace">'+fmt(tickVal)+'</text>';
+    }
+  }
+
+  // Bars + value labels on top
+  datasets.forEach(function(ds,di){
+    ds.data.forEach(function(val,i){
+      var bh=Math.round(val/maxVal*height);
+      var x=yAxisW+i*(groupW+groupGap)+di*(barW+barGap)+(groupGap/2);
+      var y=topPad+height-bh;
+      svg+='<rect x="'+x+'" y="'+y+'" width="'+barW+'" height="'+bh+'" fill="'+ds.color+'" rx="3" opacity=".85"><title>'+ds.label+': '+fmt(val)+'</title></rect>';
+      if(showValues&&val>0){
+        svg+='<text x="'+(x+barW/2)+'" y="'+(y-5)+'" text-anchor="middle" fill="'+ds.color+'" font-size="10" font-weight="600" font-family="DM Mono,monospace">'+fmt(val)+'</text>';
+      }
+    });
+  });
+
+  // X-axis labels (spaced out)
+  labels.forEach(function(l,i){
+    var lx=yAxisW+i*(groupW+groupGap)+groupW/2+(groupGap/2);
+    svg+='<text x="'+lx+'" y="'+(topPad+height+18)+'" text-anchor="middle" fill="var(--muted)" font-size="11" font-family="DM Sans,sans-serif">'+l+'</text>';
+  });
+
+  return svg+'</svg></div>';
+}
+
+// ── Sparkline ──────────────────────────────────────────────────────────────────
+function spark(data,color){
+  if(!data||data.length<2)return'';
+  var w=110,h=32,mn=Math.min.apply(null,data),mx=Math.max.apply(null,data),r=mx-mn||1;
+  var pts=data.map(function(v,i){return(i/(data.length-1))*w+','+(h-((v-mn)/r)*h);}).join(' ');
+  var last=pts.split(' ').pop().split(',');
+  return'<svg width="'+w+'" height="'+h+'" style="overflow:visible;display:block;margin-top:7px">'+
+    '<polyline points="'+pts+'" fill="none" stroke="'+color+'" stroke-width="2" stroke-linejoin="round"/>'+
+    '<circle cx="'+last[0]+'" cy="'+last[1]+'" r="3" fill="'+color+'"/></svg>';
+}
+
+// ── Stat card ──────────────────────────────────────────────────────────────────
+function statCard(o){
+  var color=o.accent;
+  if(o.featured){
+    return'<div class="stat-card featured">'+
+      '<div class="stat-label">'+o.label+'</div>'+
+      '<div class="stat-value">'+o.value+'</div>'+
+      (o.sub?'<div class="stat-sub">'+o.sub+'</div>':'')+
+      (o.sparkData?spark(o.sparkData,'rgba(255,255,255,0.7)'):'')+'</div>';
+  }
+  return'<div class="stat-card">'+
+    '<div style="position:absolute;top:0;left:0;right:0;height:3px;border-radius:16px 16px 0 0;background:'+color+'"></div>'+
+    '<div class="stat-label">'+o.label+'</div>'+
+    '<div class="stat-value" style="color:'+color+'">'+o.value+'</div>'+
+    (o.sub?'<div class="stat-sub">'+o.sub+'</div>':'')+
+    (o.sparkData?spark(o.sparkData,color):'')+'</div>';
+}
+
+// ── People tab renderer ────────────────────────────────────────────────────────
+function renderPeopleTab(){
+  var el=$('content');
+  if(!el)return;
+
+  // Loading state
+  if(peopleLoading||!P){
+    el.innerHTML='<div style="text-align:center;padding:80px 0">'+
+      '<div style="display:inline-block;width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--brand);border-radius:50%;animation:spin 1s linear infinite"></div>'+
+      '<div style="margin-top:14px;color:var(--muted);font-size:14px">Loading congregation data…</div>'+
+      '<div style="color:var(--muted2);font-size:12px;margin-top:4px">Fetching People API &amp; analyzing check-in history</div>'+
+    '</div>';
+    return;
+  }
+
+  // Error state
+  if(P.error){
+    el.innerHTML='<div class="panel"><div style="color:var(--red);font-weight:600">Error loading people data</div><div style="color:var(--muted);font-size:13px;margin-top:6px">'+esc(P.error)+'</div></div>';
+    return;
+  }
+
+  var g=P.growth||{};
+  var ar=P.atRisk||{};
+
+  // Growth trend arrow
+  var growthDiff=g.newThisMonth-g.newLastMonth;
+  var growthArrow=growthDiff>0?'▲ +'+growthDiff+' vs last month':growthDiff<0?'▼ '+growthDiff+' vs last month':'= Same as last month';
+  var growthColor=growthDiff>0?'var(--green)':growthDiff<0?'var(--red)':'var(--muted)';
+
+  // Stat grid
+  var statsHtml=
+    '<div class="stat-grid" style="margin-bottom:20px">'+
+      statCard({label:'Active Members',value:fmt(g.totalActive),sub:'Currently active in PCO',accent:'var(--brand)',featured:true})+
+      statCard({label:'New This Month',value:fmt(g.newThisMonth),sub:'<span style="color:'+growthColor+'">'+growthArrow+'</span>',accent:'var(--green)'})+
+      statCard({label:'Added (12 Months)',value:fmt(g.totalInRange),sub:'New profiles in the past year',accent:'var(--purple)'})+
+      statCard({label:'Inactive Profiles',value:fmt(g.totalInactive),sub:'Cumulative since church started',accent:'var(--amber)'})+
+    '</div>';
+
+  // New member growth bar chart
+  var growthChartHtml='<div class="panel">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">'+
+      '<div class="panel-title">New Member Profiles</div>'+
+    '</div>'+
+    '<div class="panel-sub">New people added to your PCO database per month (last 12 months)</div>'+
+    barChart(g.months||[],[{label:'New Profiles',data:g.newPerMonth||[],color:'var(--brand)'}],160,{fullWidth:true})+
+  '</div>';
+
+  // At-risk congregants section
+  var atRiskHtml='';
+  if(!ar.available){
+    atRiskHtml='<div class="panel">'+
+      '<div class="panel-title">At-Risk Congregant Tracker</div>'+
+      '<div class="panel-sub">'+esc(ar.reason||'Not available')+'</div>'+
+      '<div class="note"><strong>To enable check-in based tracking:</strong> Make sure the Sunday service uses individual check-ins (not just headcounts) in PCO Check-Ins via kiosk or Church Center app.</div>'+
+    '</div>';
+  } else if(ar.atRiskCongregants&&ar.atRiskCongregants.length===0){
+    atRiskHtml='<div class="panel">'+
+      '<div class="panel-title">At-Risk Congregant Tracker</div>'+
+      '<div class="panel-sub">Analyzed '+ar.periodsAnalyzed+' Sundays · '+fmt(ar.totalUniqueAttendees)+' unique attendees tracked</div>'+
+      '<div style="text-align:center;padding:30px 0;color:var(--green);font-weight:600">✓ No at-risk congregants detected — everyone who attended regularly is still showing up!</div>'+
+    '</div>';
+  } else {
+    var isInactivationMode=ar.mode==='inactivations';
+    var rows=(ar.atRiskCongregants||[]).map(function(v){
+      if(isInactivationMode){
+        var days=v.daysInactive!=null?v.daysInactive+'d ago':'unknown';
+        var dotColor=v.daysInactive>=60?'var(--red)':v.daysInactive>=30?'var(--amber)':'var(--orange)';
+        return'<div class="alert-row">'+
+          '<div>'+
+            '<div class="alert-name">'+esc(v.name)+'</div>'+
+            '<div class="alert-meta">Inactivated '+esc(v.inactivatedDate||'unknown')+(v.membership?' · '+esc(v.membership):'')+'</div>'+
+          '</div>'+
+          '<div style="display:flex;align-items:center;gap:8px">'+
+            '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+dotColor+'"></span>'+
+            '<span class="alert-badge">'+days+'</span>'+
+          '</div>'+
+        '</div>';
+      } else {
+        var wks=v.weeksSince!=null?v.weeksSince+'w ago':'unknown';
+        var dotColor=v.weeksSince>=8?'var(--red)':v.weeksSince>=5?'var(--amber)':'var(--orange)';
+        return'<div class="alert-row">'+
+          '<div>'+
+            '<div class="alert-name">'+esc(v.name)+'</div>'+
+            '<div class="alert-meta">Last seen '+esc(v.lastCheckinDate||'unknown')+' · attended '+v.historicalCheckins+'× in prior '+ar.periodsAnalyzed+' weeks</div>'+
+          '</div>'+
+          '<div style="display:flex;align-items:center;gap:8px">'+
+            '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+dotColor+'"></span>'+
+            '<span class="alert-badge">'+wks+'</span>'+
+          '</div>'+
+        '</div>';
+      }
+    }).join('');
+
+    var atRiskTitle=isInactivationMode
+      ?ar.atRiskCongregants.length+' Recently Inactive Members'
+      :ar.atRiskCongregants.length+' At-Risk Congregants';
+    var atRiskSub=isInactivationMode
+      ?(ar.modeNote||'People marked inactive in PCO in the last '+ar.lookbackDays+' days')
+      :('Attended regularly in the past '+ar.periodsAnalyzed+' weeks but absent the last '+ar.recentWindow+' Sundays · '+fmt(ar.totalUniqueAttendees)+' total unique attendees tracked');
+
+    atRiskHtml='<div class="alert-card">'+
+      '<div class="alert-card-header">'+
+        '<div class="alert-icon">!</div>'+
+        '<div>'+
+          '<div class="alert-title">'+atRiskTitle+'</div>'+
+          '<div class="alert-sub">'+esc(atRiskSub)+'</div>'+
+        '</div>'+
+      '</div>'+
+      rows+
+    '</div>';
+  }
+
+  // Refresh button
+  var refreshBtn='<div style="display:flex;justify-content:flex-end;margin-bottom:14px">'+
+    '<button class="btn-sm" onclick="loadPeopleData(true)">↻ Refresh People Data</button>'+
+  '</div>';
+
+  el.innerHTML=refreshBtn+statsHtml+growthChartHtml+atRiskHtml;
+}
+
+function openVolDetailFromPeople(id,data){
+  // Reuse the existing volunteer detail panel with adapted data
+  var v={
+    name:data.name,
+    teams:[],positions:[],
+    scheduledByWeek:new Array(data.totalWeeks).fill(0),
+    confirmedByWeek:new Array(data.totalWeeks).fill(0),
+    declinedByWeek:new Array(data.totalWeeks).fill(0),
+  };
+  // This is a stub — full drill-down would require fetching the person's full check-in history
+  // For now, show a simple info modal
+  var overlay=$('detail-overlay');
+  var nameEl=$('detail-name');
+  var subEl=$('detail-sub');
+  var bodyEl=$('detail-body');
+  if(!overlay)return;
+  nameEl.textContent=data.name;
+  subEl.textContent='Last attended: '+(data.lastCheckinDate||'unknown')+' · Attended '+data.historicalCheckins+'× in the prior '+data.totalWeeks+' weeks';
+  bodyEl.innerHTML='<div class="note"><strong>Absent '+data.weeksSince+' weeks</strong> — This person attended consistently and has since stopped attending.</div>'+
+    '<p style="color:var(--muted);font-size:13px;margin-top:12px">Consider reaching out to check in with them. Their attendance history shows they were a regular part of the community.</p>';
+  overlay.style.display='flex';
+}
+
+// ── Render ─────────────────────────────────────────────────────────────────────
+function renderContent(){
+  if(!D){return;}
+  var li=D.labels.length-1;
+  var rateData=D.confirmed.map(function(c,i){return pct(c,D.scheduled[i]);});
+
+  if(activeTab==='overview'){
+    var kidsData=D.kidsCheckinCounts||D.kidsAttendance||D.labels.map(function(){return 0;});
+    var decisionsData=D.decisions||D.labels.map(function(){return 0;});
+    var periodLabel=D.grouping==='monthly'?'This Month':'This Week';
+    $('content').innerHTML=
+      '<div class="stat-grid">'+
+        statCard({label:'Sunday Attendance',value:fmt(D.attendance[li]),
+          sub:li>0?(D.attendance[li]>=D.attendance[li-1]?'▲ ':'▼ ')+(Math.abs(D.attendance[li]-D.attendance[li-1]))+' vs prior':'',
+          sparkData:D.attendance,accent:'var(--accent)',featured:true})+
+        statCard({label:'Kid Attendance',value:fmt(kidsData[li]),
+          sub:li>0?(kidsData[li]>=kidsData[li-1]?'▲ ':'▼ ')+(Math.abs(kidsData[li]-kidsData[li-1]))+' vs prior':'',
+          sparkData:kidsData,accent:'var(--amber)'})+
+        statCard({label:'Total Volunteers',value:fmt(D.uniqueVolunteers[li]),
+          sub:D.confirmed[li]+' of '+D.scheduled[li]+' slots confirmed ('+pct(D.confirmed[li],D.scheduled[li])+'%)',
+          sparkData:D.uniqueVolunteers,accent:'var(--green)'})+
+        statCard({label:'Total Decisions',value:fmt(decisionsData[li]),
+          sub:periodLabel,sparkData:decisionsData,accent:'var(--purple)'})+
+      '</div>'+
+      '<div class="panel">'+
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">'+
+          '<div class="panel-title">Sunday Attendance</div>'+
+          chartRangeDropdown('attendance')+
+        '</div>'+
+        '<div class="panel-sub" id="attendance-sub"></div>'+
+        '<div id="attendance-chart"></div>'+
+      '</div>'+
+      (function(){
+        return'<div class="panel">'+
+          '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">'+
+            '<div class="panel-title">Decisions</div>'+
+            chartRangeDropdown('decisions')+
+          '</div>'+
+          '<div class="panel-sub" id="decisions-sub"></div>'+
+          '<div id="decisions-chart"></div>'+
+        '</div>';
+      })()+
+      '<div class="panel">'+
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">'+
+          '<div class="panel-title">Weekly Volunteers</div>'+
+          chartRangeDropdown('volunteers')+
+        '</div>'+
+        '<div class="panel-sub" id="volunteers-sub"></div>'+
+        '<div id="volunteers-chart"></div>'+
+      '</div>';
+    // Render charts after HTML is in the DOM
+    renderChartOnly('attendance');
+    renderChartOnly('decisions');
+    renderChartOnly('volunteers');
+
+  } else if(activeTab==='volunteers'){
+    // Week selector for multi-service widget
+    if(selectedMultiWeek===null)selectedMultiWeek=li;
+    var weekBtns=D.labels.map(function(lbl,i){
+      return'<button class="week-btn'+(i===selectedMultiWeek?' active':'')+'" onclick="selectMultiWeek('+i+')">'+lbl+'</button>';
+    }).join('');
+
+    var currentMulti=D.weeklyMultiServers[selectedMultiWeek]||[];
+    var multiRows=currentMulti.length>0
+      ? currentMulti.map(function(v,i){
+          var assignments=(v.schedules||[]).map(function(s){
+            var team=s.team||'Volunteer';var time=s.serviceTime||'';
+            var line='<span style="color:var(--accent);font-weight:500">'+esc(team)+'</span>';
+            if(time)line+=' <span style="color:var(--muted)">@</span> <span style="color:var(--purple);font-weight:500">'+esc(time)+'</span>';
+            return line;
+          });
+          var seen={};assignments=assignments.filter(function(a){if(seen[a])return false;seen[a]=true;return true;});
+          var times=(v.serviceTimes||[]).join(', ')||(v.schedules||[]).map(function(s){return s.serviceTime||'';}).filter(Boolean).join(', ')||'—';
+          var vp=(D.volunteerProfiles||[]).find(function(p){return p.name===v.name;});
+          var clickFn=vp?'openVolDetail(D.volunteerProfiles['+D.volunteerProfiles.indexOf(vp)+'])':'openDetail('+selectedMultiWeek+','+i+')';
+          return'<tr class="crow" onclick="'+clickFn+'">'+
+            '<td style="vertical-align:top;padding-right:12px">'+
+              '<div style="display:flex;align-items:center;gap:9px">'+
+                '<div style="width:28px;height:28px;border-radius:7px;background:'+avatarColor(v.name)+'22;color:'+avatarColor(v.name)+';display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">'+initials(v.name)+'</div>'+
+                '<span style="font-weight:600">'+esc(v.name)+'</span>'+
+              '</div>'+
+            '</td>'+
+            '<td style="color:var(--purple);font-size:12px;font-weight:600;white-space:nowrap;vertical-align:top;padding-right:12px">'+times+'</td>'+
+            '<td style="font-size:12px;line-height:1.6;vertical-align:top;padding-right:12px">'+assignments.join('<br/>')+'</td>'+
+            '<td style="vertical-align:top"><span class="pill" style="background:var(--purple)22;color:var(--purple);border:1px solid var(--purple)33">'+v.appearances+'×</span></td>'+
+            '<td style="color:var(--muted);font-size:12px;vertical-align:top">→</td>'+
+          '</tr>';
+        }).join('')
+      : '<tr><td colspan="5" style="color:var(--muted);text-align:center;padding:20px 0">No multi-service volunteers this week</td></tr>';
+
+    // Volunteer list (filtered by search)
+    var allVols=D.volunteerProfiles||[];
+    var filteredVols=volSearchQuery
+      ? allVols.filter(function(v){return v.name.toLowerCase().indexOf(volSearchQuery.toLowerCase())>=0;})
+      : allVols;
+    var volRows=filteredVols.slice(0,50).map(function(v,i){
+      var rate=participationRate(v);
+      var color=avatarColor(v.name);
+      var rc=rate>=80?'var(--green)':rate>=60?'var(--amber)':'var(--red)';
+      var lastSeen=v.lastServeWi>=0?D.labels[v.lastServeWi]:'—';
+      var teamsDisplay=v.teams.filter(function(t){return t&&t!=='Other';}).join(' · ')||v.teams.join(' · ')||'—';
+      return'<div class="vol-row" onclick="openVolDetail(D.volunteerProfiles['+allVols.indexOf(v)+'])">'+
+        '<div class="vol-avatar" style="background:'+color+'18;color:'+color+';border:1px solid '+color+'33">'+initials(v.name)+'</div>'+
+        '<div>'+
+          '<div class="vol-name">'+esc(v.name)+'</div>'+
+          '<div class="vol-meta">'+esc(teamsDisplay)+'</div>'+
+        '</div>'+
+        '<div class="vol-right">'+
+          '<div class="vol-count" style="color:'+color+'">'+v.totalConfirmed+' serves</div>'+
+          '<div class="vol-rate"><span class="pill" style="background:'+rc+'15;color:'+rc+';border:1px solid '+rc+'30">'+rate+'%</span> <span style="color:var(--muted2)">last: '+esc(lastSeen)+'</span></div>'+
+        '</div>'+
+      '</div>';
+    }).join('');
+
+    // At-risk volunteers
+    var atRisk=D.atRiskVolunteers||[];
+    var atRiskHTML='';
+    if(atRisk.length>0){
+      atRiskHTML='<div class="alert-card">'+
+        '<div class="alert-card-header">'+
+          '<div class="alert-icon">!</div>'+
+          '<div><div class="alert-title">'+atRisk.length+' Volunteer'+(atRisk.length===1?'':'s')+' May Be Slipping Away</div>'+
+            '<div class="alert-sub">Served consistently in recent weeks but haven\'t shown up lately — worth a check-in</div></div>'+
+        '</div>'+
+        atRisk.map(function(v){
+          var vp=(D.volunteerProfiles||[]).find(function(p){return p.name===v.name;});
+          var clickFn=vp?'openVolDetail(D.volunteerProfiles['+D.volunteerProfiles.indexOf(vp)+'])':'';
+          return'<div class="alert-row"'+(clickFn?' onclick="'+clickFn+'"':'')+'>'+
+            '<div>'+
+              '<div class="alert-name">'+esc(v.name)+'</div>'+
+              '<div class="alert-meta">'+(v.teams&&v.teams.length?esc(v.teams[0])+' · ':'')+'Last served: '+(v.lastServeLabel?esc(v.lastServeLabel):'unknown')+'</div>'+
+            '</div>'+
+            '<div class="alert-badge">'+v.priorServes+'× in prior '+v.weeksMissing*3+'wks</div>'+
+          '</div>';
+        }).join('')+
+      '</div>';
+    }
+
+    // First-timer names for the current week
+    var ftNames=D.firstTimerNames?D.firstTimerNames[li]:[];
+    var ftConfirmed=ftNames.filter(function(f){return f.status==='C';}).length;
+    var ftTotal=ftNames.length;
+
+    // First-timers list panel
+    var ftListHtml='';
+    if(ftTotal>0){
+      var ftRows=ftNames.map(function(f){
+        var sc=statusColor(f.status);
+        return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">'+
+          '<div style="width:32px;height:32px;border-radius:8px;background:var(--purple)15;color:var(--purple);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0">'+
+            (f.name?f.name.split(' ').map(function(w){return w[0]||'';}).join('').slice(0,2).toUpperCase():'')+
+          '</div>'+
+          '<div style="flex:1;min-width:0">'+
+            '<div style="font-size:13px;font-weight:600;color:var(--text)">'+esc(f.name)+'</div>'+
+            '<div style="font-size:11px;color:var(--muted)">Next Step Team · First Serve Volunteer'+(f.serviceTime?' · '+esc(f.serviceTime):'')+'</div>'+
+          '</div>'+
+          '<span class="sbadge" style="background:'+sc+'22;color:'+sc+';border:1px solid '+sc+'44">'+statusLabel(f.status)+'</span>'+
+        '</div>';
+      }).join('');
+      ftListHtml='<div class="panel">'+
+        '<div class="panel-title">First-Time Volunteers — '+D.labels[li]+'</div>'+
+        '<div class="panel-sub" style="margin-bottom:10px">People in the "First Serve Volunteer" position on the Next Step Team</div>'+
+        ftRows+
+      '</div>';
+    }
+
+    $('content').innerHTML=
+      '<div class="stat-grid">'+
+        statCard({label:'Unique Volunteers',value:fmt(D.uniqueVolunteers[li]),sub:'Individual people serving',sparkData:D.uniqueVolunteers,accent:'var(--purple)'})+
+        statCard({label:'Positions Scheduled',value:fmt(D.scheduled[li]),
+          sub:D.scheduled[li]&&D.uniqueVolunteers[li]?Math.round((D.scheduled[li]/D.uniqueVolunteers[li])*10)/10+' positions per person':'',accent:'var(--accent)'})+
+        statCard({label:'Confirmed',value:fmt(D.confirmed[li]),sub:pct(D.confirmed[li],D.uniqueVolunteers[li])+'% of unique volunteers confirmed',accent:'var(--green)'})+
+        statCard({label:'First-Time Volunteers',value:fmt(ftTotal),sub:ftConfirmed+' confirmed · '+(ftTotal-ftConfirmed)+' pending',sparkData:D.firstTimers,accent:'var(--teal)'})+
+      '</div>'+
+      atRiskHTML+
+      ftListHtml+
+      '<div class="panel">'+
+        '<div class="vol-list-header"><div><div class="panel-title">All Volunteers</div><div class="panel-sub" style="margin-bottom:0">'+allVols.length+' total · click any name to see their serve history</div></div></div>'+
+        '<div class="vol-search-wrap">'+
+          '<input class="vol-search" id="vol-search-input" type="text" placeholder="Search volunteers…" value="'+esc(volSearchQuery)+'" oninput="volSearchQuery=this.value;renderContent()"/>'+
+        '</div>'+
+        (filteredVols.length===0?'<div style="color:var(--muted);text-align:center;padding:24px 0;font-size:13px">No volunteers match "'+esc(volSearchQuery)+'"</div>':volRows)+
+        (filteredVols.length>50?'<div style="color:var(--muted);font-size:12px;text-align:center;padding:10px 0">Showing 50 of '+filteredVols.length+' — search to filter</div>':'')+
+      '</div>'+
+      '<div class="panel">'+
+        '<div class="panel-title">Multi-Service Volunteers</div>'+
+        '<div class="panel-sub">Volunteers scheduled at 2+ distinct service times in a single week</div>'+
+        '<div class="week-tabs" id="multi-week-tabs">'+weekBtns+'</div>'+
+        '<div style="color:var(--muted);font-size:13px;margin-bottom:12px">'+
+          '<strong style="color:var(--text)">'+currentMulti.length+'</strong> volunteer'+(currentMulti.length===1?'':'s')+
+          ' serving across multiple services week of <strong style="color:var(--text)">'+D.labels[selectedMultiWeek]+'</strong>'+
+        '</div>'+
+        '<table><thead><tr><th>Name</th><th>Time(s)</th><th>Teams</th><th>Slots</th><th></th></tr></thead>'+
+        '<tbody>'+multiRows+'</tbody></table>'+
+      '</div>';
+
+  } else if(activeTab==='citykids'){
+    var ckCheckins=D.kidsCheckinCounts||D.labels.map(function(){return 0;});
+    var ckHeadcounts=D.kidsAttendance||D.labels.map(function(){return 0;});
+    var ckCheckinByService=D.kidsCheckinByService||{};
+    var ckRoomBreakdown=D.kidsRoomBreakdown||{};
+
+    // Sort service times chronologically
+    var ckServiceTimes=sortServiceTimes(Object.keys(ckCheckinByService).filter(function(k){return k!=='Unknown';}));
+
+    // Build check-in by service time chart datasets
+    var ciDatasets=[];
+    if(ckServiceTimes.length>0){
+      ckServiceTimes.forEach(function(k){
+        ciDatasets.push({label:k,data:ckCheckinByService[k],color:getServiceColor(k)});
+      });
+    } else {
+      ciDatasets=[{label:'Check-ins',data:ckCheckins,color:'var(--amber)'}];
+    }
+
+    // Build room breakdown tables — one per service time
+    var roomHTML='';
+    var sortedSvcTimes=sortServiceTimes(Object.keys(ckRoomBreakdown));
+    sortedSvcTimes.forEach(function(svcTime){
+      var rooms=ckRoomBreakdown[svcTime];
+      var roomNames=Object.keys(rooms).sort();
+      // Build a table: rows=rooms, columns=weeks (just show last 4 weeks for readability)
+      var showWeeks=Math.min(D.labels.length,8);
+      var startIdx=D.labels.length-showWeeks;
+      var headerCells=D.labels.slice(startIdx).map(function(l){
+        return '<th style="text-align:right;padding:6px 8px;min-width:55px">'+l+'</th>';
+      }).join('');
+
+      var bodyRows=roomNames.map(function(room){
+        var data=rooms[room];
+        var cells=data.slice(startIdx).map(function(v,i){
+          var idx=startIdx+i;
+          var prev=idx>0?data[idx-1]:null;
+          var diffColor=prev!==null?(v>prev?'var(--green)':v<prev?'var(--red)':'var(--muted)'):'var(--muted)';
+          return '<td style="text-align:right;padding:6px 8px;font-family:\'DM Mono\',monospace;font-size:13px">'+
+            '<span style="font-weight:600">'+v+'</span>'+
+            (prev!==null&&v!==prev?'<span style="color:'+diffColor+';font-size:10px;margin-left:3px">'+(v>prev?'▲':'▼')+Math.abs(v-prev)+'</span>':'')+
+          '</td>';
+        }).join('');
+        // Total for latest week
+        var latestVal=data[D.labels.length-1]||0;
+        return '<tr>'+
+          '<td style="font-weight:500;padding:6px 8px;white-space:nowrap">'+esc(room)+'</td>'+
+          cells+
+        '</tr>';
+      }).join('');
+
+      // Service time total row
+      var totalCells=D.labels.slice(startIdx).map(function(l,ci){
+        var idx=startIdx+ci;
+        var sum=roomNames.reduce(function(s,r){return s+(rooms[r][idx]||0);},0);
+        return '<td style="text-align:right;padding:6px 8px;font-family:\'DM Mono\',monospace;font-weight:700;font-size:13px;border-top:2px solid var(--border)">'+sum+'</td>';
+      }).join('');
+
+      roomHTML+='<div class="panel">'+
+        '<div class="panel-title" style="display:flex;align-items:center;gap:8px">'+
+          '<span style="color:'+getServiceColor(svcTime)+';font-size:18px">●</span> '+svcTime+' Service'+
+        '</div>'+
+        '<div class="panel-sub">Room-by-room headcounts</div>'+
+        '<div style="overflow-x:auto"><table>'+
+          '<thead><tr><th style="padding:6px 8px">Room</th>'+headerCells+'</tr></thead>'+
+          '<tbody>'+bodyRows+
+            '<tr><td style="font-weight:700;padding:6px 8px;border-top:2px solid var(--border)">Total</td>'+totalCells+'</tr>'+
+          '</tbody>'+
+        '</table></div>'+
+      '</div>';
+    });
+
+    // Multi-service kids data
+    var ckMultiKids=D.weeklyMultiServiceKids||D.labels.map(function(){return[];});
+    var ckUniqueKids=D.uniqueKids||D.labels.map(function(){return 0;});
+    var ciLegend=ciDatasets.map(function(ds){return '<span style="color:'+ds.color+'">■</span> '+ds.label;}).join(' &nbsp;');
+
+    // Multi-service kids week selector (same pattern as volunteers)
+    if(selectedKidsMultiWeek===null)selectedKidsMultiWeek=li;
+    var ckSelectedWeek=selectedKidsMultiWeek;
+    var ckCurrentMulti=ckMultiKids[ckSelectedWeek]||[];
+    var ckWeekBtns='';
+    for(var wi=D.labels.length-1;wi>=Math.max(0,D.labels.length-4);wi--){
+      var ckCount=ckMultiKids[wi]?ckMultiKids[wi].length:0;
+      ckWeekBtns+='<button class="week-btn'+(wi===ckSelectedWeek?' active':'')+'" onclick="switchKidsMultiWeek('+wi+')">'+
+        D.labels[wi]+' <span style="opacity:0.6">('+ckCount+')</span></button>';
+    }
+
+    // Multi-service kids table rows
+    var ckMultiRows='';
+    if(ckCurrentMulti.length===0){
+      ckMultiRows='<tr><td colspan="3" style="text-align:center;color:var(--muted);padding:20px">No kids checked into multiple services this week</td></tr>';
+    } else {
+      ckCurrentMulti.forEach(function(kid){
+        ckMultiRows+='<tr>'+
+          '<td style="font-weight:500">'+esc(kid.name)+'</td>'+
+          '<td>'+kid.services.join(', ')+'</td>'+
+          '<td style="text-align:center;font-weight:600">'+kid.serviceCount+'</td>'+
+        '</tr>';
+      });
+    }
+
+    $('content').innerHTML=
+      '<div class="stat-grid">'+
+        statCard({label:'Kids Checked In',value:fmt(ckCheckins[li]),
+          sub:'Total check-ins this week (incl. multi-service)',sparkData:ckCheckins,accent:'var(--green)'})+
+        statCard({label:'Unique Kids',value:fmt(ckUniqueKids[li]),
+          sub:'Individual children this week',sparkData:ckUniqueKids,accent:'var(--accent)'})+
+        statCard({label:'Multi-Service Kids',value:fmt(ckCurrentMulti.length),
+          sub:'Kids checked in at 2+ services',accent:'var(--purple)'})+
+        statCard({label:'Kids Headcount',value:fmt(ckHeadcounts[li]),
+          sub:'Room-by-room manual counts',sparkData:ckHeadcounts,accent:'var(--amber)'})+
+      '</div>'+
+      '<div class="panel">'+
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">'+
+          '<div class="panel-title">Check-ins by Service Time</div>'+
+          chartRangeDropdown('kidscheckins')+
+        '</div>'+
+        '<div class="panel-sub" id="kidscheckins-sub"></div>'+
+        '<div id="kidscheckins-chart"></div>'+
+      '</div>'+
+      '<div class="panel">'+
+        '<div class="panel-title">Multi-Service Kids</div>'+
+        '<div class="panel-sub">Kids checked into 2+ service times on the same Sunday</div>'+
+        '<div class="week-tabs" id="kids-multi-week-tabs">'+ckWeekBtns+'</div>'+
+        '<div style="color:var(--muted);font-size:13px;margin-bottom:12px">'+
+          '<strong style="color:var(--text)">'+ckCurrentMulti.length+'</strong> kid'+(ckCurrentMulti.length===1?'':'s')+
+          ' checked into multiple services week of <strong style="color:var(--text)">'+D.labels[ckSelectedWeek]+'</strong>'+
+        '</div>'+
+        '<table><thead><tr><th>Name</th><th>Services</th><th style="text-align:center">Count</th></tr></thead>'+
+        '<tbody>'+ckMultiRows+'</tbody></table>'+
+      '</div>'+
+      '<div style="margin-bottom:8px"><div style="font-weight:600;font-size:16px;margin-bottom:4px">Room Breakdown by Service</div>'+
+        '<div style="color:var(--muted);font-size:13px;margin-bottom:14px">Manual headcounts per classroom at each service time</div>'+
+      '</div>'+
+      roomHTML+
+      (sortedSvcTimes.length===0?'<div class="panel" style="text-align:center;color:var(--muted);padding:30px">No room breakdown data available yet</div>':'');
+    renderChartOnly('kidscheckins');
+
+  } else if(activeTab==='attendance'){
+    var avg=Math.round(D.attendance.reduce(function(a,b){return a+b;},0)/D.attendance.length);
+    var tableRows=D.labels.map(function(l,i){
+      var diff=i>0?D.attendance[i]-D.attendance[i-1]:null;
+      var rate=pct(D.confirmed[i],D.scheduled[i]);
+      return'<tr>'+
+        '<td style="font-weight:500">'+l+'</td>'+
+        '<td style="font-family:\'DM Mono\',monospace">'+fmt(D.attendance[i])+'</td>'+
+        '<td style="font-family:\'DM Mono\',monospace;color:'+(diff==null?'var(--muted)':diff>0?'var(--green)':'var(--red)')+'">'+
+          (diff==null?'—':(diff>0?'+':'')+fmt(diff))+'</td>'+
+        '<td style="font-family:\'DM Mono\',monospace">'+D.confirmed[i]+'/'+D.scheduled[i]+'</td>'+
+        '<td>'+pillHTML(rate)+'</td>'+
+      '</tr>';
+    }).join('');
+
+    $('content').innerHTML=
+      '<div class="note"><strong>About attendance numbers:</strong> These figures come from Planning Center Check-Ins headcounts (usher-entered counts) or event check-in totals. If numbers look off, visit <a href="/debug" target="_blank">/debug</a> to inspect what PCO is returning.</div>'+
+      '<div class="stat-grid">'+
+        statCard({label:'This Week',value:fmt(D.attendance[li]),sparkData:D.attendance,accent:'var(--accent)'})+
+        statCard({label:'Average',value:fmt(avg),accent:'var(--green)'})+
+        statCard({label:'Peak',value:fmt(Math.max.apply(null,D.attendance)),accent:'var(--purple)'})+
+        statCard({label:'Low',value:fmt(Math.min.apply(null,D.attendance)),accent:'var(--amber)'})+
+      '</div>'+
+      '<div class="panel"><div class="panel-title">Sunday Attendance Trend</div><div class="panel-sub">'+(function(){
+        var abs=D.attendanceByService||{};
+        var svcKeys=sortServiceTimes(Object.keys(abs).filter(function(k){return k!=="Unknown";}));
+        if(svcKeys.length>0) return svcKeys.map(function(k){return '<span style="color:'+getServiceColor(k)+'">■</span> '+k;}).join(' &nbsp;')+' · '+(D.grouping==="monthly"?"Monthly":"Weekly")+' <span style="color:var(--muted);font-size:11px">(excludes evening services)</span>';
+        return (D.grouping==="monthly"?"Monthly":"Weekly")+" headcounts";
+      })()+'</div>'+
+        (function(){
+          var abs=D.attendanceByService||{};
+          var svcKeys=sortServiceTimes(Object.keys(abs).filter(function(k){return k!=="Unknown";}));
+          var ds=[];
+          if(svcKeys.length>0) svcKeys.forEach(function(k){ds.push({label:k,data:abs[k],color:getServiceColor(k)});});
+          else ds=[{label:"Total",data:D.attendance,color:"var(--accent)"}];
+          return barChart(D.labels,ds,200,{fullWidth:true});
+        })()+
+      '</div>'+
+      '<div class="panel"><div class="panel-title" style="margin-bottom:14px">'+(D.grouping==='monthly'?'Month-by-Month':'Week-by-Week')+' Breakdown</div>'+
+        '<table><thead><tr><th>Week</th><th>Attendance</th><th>vs Prior</th><th>Volunteers</th><th>Show-up</th></tr></thead>'+
+        '<tbody>'+tableRows+'</tbody></table></div>';
+
+  } else if(activeTab==='lifegroups'){
+    renderLifeGroupsTab();
+    return;
+  } else if(activeTab==='people'){
+    renderPeopleTab();
+    return;
+  } else if(activeTab==='teams'){
+    var at90=D.teams.filter(function(t){return t.coverage>=90;}).length;
+    var at70=D.teams.filter(function(t){return t.coverage>=70&&t.coverage<90;}).length;
+    var below=D.teams.filter(function(t){return t.coverage<70;}).length;
+
+    // Build a lookup from teamsWeekly for sparklines
+    var tw=D.teamsWeekly||[];
+    var twByName={};
+    tw.forEach(function(t){twByName[t.name]=t;});
+
+    var teamCards=D.teams.map(function(t){
+      var c=colorFor(t.coverage);
+      var weekly=twByName[t.name];
+      var sparkHtml='';
+      if(weekly&&weekly.coverageByWeek&&weekly.coverageByWeek.length>1){
+        sparkHtml=spark(weekly.coverageByWeek,c);
+      }
+      return'<div class="team-card" style="border-left-color:'+c+'">'+
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">'+
+          '<div style="font-weight:600;font-size:15px">'+esc(t.name)+'</div>'+pillHTML(t.coverage)+
+        '</div>'+
+        '<div style="display:flex;gap:16px;margin-bottom:10px">'+
+          '<div><div style="color:var(--muted);font-size:11px;text-transform:uppercase;margin-bottom:2px">Sched</div><div style="font-size:20px;font-weight:700;font-family:\'DM Mono\',monospace">'+t.scheduled+'</div></div>'+
+          '<div><div style="color:var(--muted);font-size:11px;text-transform:uppercase;margin-bottom:2px">Confirmed</div><div style="font-size:20px;font-weight:700;font-family:\'DM Mono\',monospace;color:var(--green)">'+t.confirmed+'</div></div>'+
+          '<div><div style="color:var(--muted);font-size:11px;text-transform:uppercase;margin-bottom:2px">Gap</div><div style="font-size:20px;font-weight:700;font-family:\'DM Mono\',monospace;color:var(--amber)">'+(t.scheduled-t.confirmed)+'</div></div>'+
+        '</div>'+
+        '<div class="coverage-bar-bg"><div class="coverage-bar-fill" style="width:'+t.coverage+'%;background:'+c+'"></div></div>'+
+        (sparkHtml?'<div style="margin-top:4px">'+sparkHtml+'</div>':'')+
+      '</div>';
+    }).join('');
+
+    // Coverage trend chart — top 8 teams by total scheduled
+    var trendHtml='';
+    if(tw.length>0){
+      trendHtml='<div class="panel" style="margin-top:14px">'+
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">'+
+          '<div class="panel-title">Coverage Trends</div>'+
+          chartRangeDropdown('coverage')+
+        '</div>'+
+        '<div class="panel-sub" id="coverage-sub" style="margin-bottom:12px"></div>'+
+        '<div id="coverage-chart"></div>'+
+      '</div>';
+    }
+
+    // Scheduled members per team over time (roster size trend)
+    var rosterHtml='';
+    if(tw.length>0){
+      rosterHtml='<div class="panel" style="margin-top:14px">'+
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">'+
+          '<div class="panel-title">Scheduled Members per Team</div>'+
+          chartRangeDropdown('rostertrend')+
+        '</div>'+
+        '<div class="panel-sub" id="rostertrend-sub" style="margin-bottom:12px"></div>'+
+        '<div id="rostertrend-chart"></div>'+
+      '</div>';
+    }
+
+    $('content').innerHTML=
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">'+
+        '<p style="color:var(--muted);font-size:13px;margin:0">Current coverage from most recent service plan · trend sparklines show the full selected range</p>'+
+        '<div style="display:flex;gap:16px">'+
+          [['≥ 90%',at90,'var(--green)'],['70–89%',at70,'var(--amber)'],['< 70%',below,'var(--red)']].map(function(x){
+            return'<div style="display:flex;align-items:center;gap:6px">'+
+              '<div style="width:8px;height:8px;border-radius:99px;background:'+x[2]+'"></div>'+
+              '<span style="color:var(--muted);font-size:12px">'+x[0]+'</span>'+
+              '<span style="font-weight:700;font-size:14px;color:'+x[2]+';font-family:\'DM Mono\',monospace">'+x[1]+'</span>'+
+            '</div>';
+          }).join('')+
+        '</div>'+
+      '</div>'+
+      '<div class="team-grid">'+teamCards+'</div>'+
+      trendHtml+
+      rosterHtml;
+    renderChartOnly('coverage');
+    renderChartOnly('rostertrend');
+  }
+}
+
+function selectMultiWeek(wi){
+  selectedMultiWeek=wi;
+  // Re-render just the volunteers tab without full reload
+  if(activeTab==='volunteers') renderContent();
+}
+function switchKidsMultiWeek(wi){
+  selectedKidsMultiWeek=wi;
+  if(activeTab==='citykids') renderContent();
+}
+
+// ── Auto-connect: check if server already has credentials from .env ─────────
+(async function autoConnect(){
+  try{
+    var sr=await fetch('/status');
+    var status=await sr.json();
+    if(status.authenticated){
+      // Server already has creds — skip the modal and load data automatically
+      setLoading(true);
+      startProgress();
+      try{
+        var dr=await fetch('/data?weeks='+currentWeeks);
+        if(!dr.ok){var e=await dr.json().catch(function(){return{};});throw new Error(e.error||'HTTP '+dr.status);}
+        D=await dr.json();
+        if(D.error)throw new Error(D.error);
+        isDemo=false;selectedMultiWeek=D.labels.length-1;selectedKidsMultiWeek=D.labels.length-1;
+        initChartData();hideModal();renderAll();
+      }catch(e){
+        // If auto-load fails, show the modal so user can re-enter creds
+        $('modal-error').textContent='⚠ Auto-connect failed: '+e.message;
+        $('modal-error').style.display='block';
+      }finally{setLoading(false);stopProgress();}
+    }
+  }catch(e){/* server not reachable yet — just show modal */}
+})();
+</script>
+</body>
+</html>

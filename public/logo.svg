@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- Outer filled C (thick donut sector, opens to the right) -->
+  <path d="M 73,15 A 43,43 0 1 0 73,85 L 62,70 A 24,24 0 1 1 62,30 Z" fill="#333333"/>
+  <!-- Inner filled C (smaller, same orientation) -->
+  <path d="M 58,38 A 14,14 0 1 0 58,62 L 54,56 A 7,7 0 1 1 54,44 Z" fill="#333333"/>
+  <!-- Blue dot (person's head, top of outer C opening) -->
+  <circle cx="73" cy="15" r="9" fill="#5AAEE0"/>
+</svg>
