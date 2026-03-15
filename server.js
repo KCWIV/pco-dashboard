@@ -62,10 +62,33 @@ let globalTeamNameMap = {};  // persistent: team_id → team_name (rarely change
 let apiCallCount   = 0;     // per-request counter for diagnostics
 let prefetchRunning = false; // guard: prevent concurrent background prefetch runs
 
-// ── Auto-load credentials from .env file ────────────────────────────────────
-if (_earlyEnv.PCO_APP_ID && _earlyEnv.PCO_SECRET) {
-  savedCreds = { appId: _earlyEnv.PCO_APP_ID, secret: _earlyEnv.PCO_SECRET };
-  console.log("✅ Loaded PCO credentials from .env file");
+// ── Auto-load PCO credentials from .env file or environment variables ────────
+const envAppId = _earlyEnv.PCO_APP_ID || process.env.PCO_APP_ID;
+const envSecret = _earlyEnv.PCO_SECRET || process.env.PCO_SECRET;
+if (envAppId && envSecret) {
+  savedCreds = { appId: envAppId, secret: envSecret };
+  console.log("✅ Loaded PCO credentials from environment");
+}
+
+// ── Staff login system ──────────────────────────────────────────────────────
+// DASHBOARD_PASSWORD env var gates access to the dashboard.
+// If not set, the dashboard is open (backwards-compatible for local dev).
+const DASHBOARD_PASSWORD = _earlyEnv.DASHBOARD_PASSWORD || process.env.DASHBOARD_PASSWORD || null;
+const activeSessions = new Set(); // simple in-memory session tokens
+
+function generateToken() {
+  const crypto = require("crypto");
+  return crypto.randomBytes(32).toString("hex");
+}
+
+function isAuthenticated(req) {
+  if (!DASHBOARD_PASSWORD) return true; // no password set = open access
+  const cookies = (req.headers.cookie || "").split(";").reduce((acc, c) => {
+    const [k, v] = c.trim().split("=");
+    if (k && v) acc[k] = v;
+    return acc;
+  }, {});
+  return activeSessions.has(cookies.session);
 }
 
 // ── PCO fetch with automatic retry on rate-limit (429) and server errors ─────
@@ -1370,6 +1393,101 @@ const server = http.createServer(async (req, res) => {
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   if (req.method === "OPTIONS") { res.writeHead(204); return res.end(); }
+
+  // ── Staff login system ──────────────────────────────────────────────────────
+  if (req.method === "POST" && parsed.pathname === "/login") {
+    let body = "";
+    req.on("data", d => (body += d));
+    req.on("end", () => {
+      try {
+        const { password } = JSON.parse(body);
+        if (!DASHBOARD_PASSWORD || password === DASHBOARD_PASSWORD) {
+          const token = generateToken();
+          activeSessions.add(token);
+          res.writeHead(200, {
+            "Content-Type": "application/json",
+            "Set-Cookie": "session=" + token + "; Path=/; HttpOnly; SameSite=Strict; Max-Age=604800"
+          });
+          return res.end(JSON.stringify({ ok: true }));
+        }
+        res.writeHead(401, { "Content-Type": "application/json" });
+        return res.end(JSON.stringify({ error: "Incorrect password" }));
+      } catch(e) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        return res.end(JSON.stringify({ error: "Invalid request" }));
+      }
+    });
+    return;
+  }
+
+  if (req.method === "GET" && parsed.pathname === "/logout") {
+    const cookies = (req.headers.cookie || "").split(";").reduce((acc, c) => {
+      const [k, v] = c.trim().split("=");
+      if (k && v) acc[k] = v;
+      return acc;
+    }, {});
+    if (cookies.session) activeSessions.delete(cookies.session);
+    res.writeHead(302, {
+      "Set-Cookie": "session=; Path=/; HttpOnly; Max-Age=0",
+      "Location": "/"
+    });
+    return res.end();
+  }
+
+  // Serve login page for unauthenticated users
+  if (DASHBOARD_PASSWORD && !isAuthenticated(req)) {
+    // Allow login endpoint through (handled above)
+    // Serve the login page for all other requests
+    const loginHtml = '<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
+      '<title>CCC Dashboard — Login</title>' +
+      '<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">' +
+      '<style>' +
+        '*{margin:0;padding:0;box-sizing:border-box}' +
+        'body{font-family:"DM Sans",sans-serif;background:#f8f9fa;display:flex;align-items:center;justify-content:center;min-height:100vh}' +
+        '.login-card{background:#fff;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,.08);padding:48px 40px;width:100%;max-width:400px;text-align:center}' +
+        '.login-logo{width:64px;height:64px;margin:0 auto 16px;border-radius:14px;object-fit:contain}' +
+        '.login-title{font-size:22px;font-weight:700;color:#1a1a2e;margin-bottom:4px}' +
+        '.login-sub{font-size:13px;color:#6b7280;margin-bottom:28px}' +
+        '.login-input{width:100%;padding:12px 16px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:15px;font-family:inherit;outline:none;transition:border-color .2s}' +
+        '.login-input:focus{border-color:#5AAEE0}' +
+        '.login-btn{width:100%;padding:12px;background:#1a1a2e;color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:600;font-family:inherit;cursor:pointer;margin-top:16px;transition:background .2s}' +
+        '.login-btn:hover{background:#2d2d44}' +
+        '.login-error{color:#dc2626;font-size:13px;margin-top:12px;display:none}' +
+      '</style></head><body>' +
+      '<div class="login-card">' +
+        '<img src="/logo.png" class="login-logo" alt="CCC" onerror="this.style.display=\'none\'">' +
+        '<div class="login-title">City Church Chicago</div>' +
+        '<div class="login-sub">Enter the dashboard password to continue</div>' +
+        '<form id="lf" onsubmit="return doLogin(event)">' +
+          '<input type="password" class="login-input" id="pw" placeholder="Password" autocomplete="current-password" autofocus>' +
+          '<button type="submit" class="login-btn">Sign In</button>' +
+          '<div class="login-error" id="err"></div>' +
+        '</form>' +
+      '</div>' +
+      '<script>' +
+        'function doLogin(e){' +
+          'e.preventDefault();' +
+          'var pw=document.getElementById("pw").value;' +
+          'var err=document.getElementById("err");' +
+          'err.style.display="none";' +
+          'fetch("/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pw})})' +
+            '.then(function(r){return r.json().then(function(d){return{ok:r.ok,data:d}})})' +
+            '.then(function(r){' +
+              'if(r.ok){window.location.reload()}' +
+              'else{err.textContent=r.data.error||"Incorrect password";err.style.display="block"}' +
+            '}).catch(function(){err.textContent="Connection error";err.style.display="block"});' +
+          'return false;' +
+        '}' +
+      '</script></body></html>';
+
+    // Let static assets through (logo, fonts) so login page looks right
+    if (parsed.pathname === "/logo.png" || parsed.pathname === "/logo.svg") {
+      // fall through to static file handler below
+    } else {
+      res.writeHead(200, { "Content-Type": "text/html" });
+      return res.end(loginHtml);
+    }
+  }
 
   if (req.method === "GET" && parsed.pathname === "/status") {
     res.writeHead(200, { "Content-Type": "application/json" });
