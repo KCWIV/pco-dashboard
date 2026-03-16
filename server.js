@@ -334,6 +334,13 @@ async function buildData(weeks) {
         for (const pt of (ptRes.body && ptRes.body.data) || []) {
           if (pt.id && !planTimeMap[pt.id]) {
             const pta = pt.attributes || {};
+            // Skip rehearsal and other time types — only count actual service times
+            if (pta.time_type === "rehearsal" || pta.time_type === "other") continue;
+            // Skip evening times (6 PM+) — these are Saturday rehearsals or non-Sunday events
+            if (pta.starts_at) {
+              const ptHour = new Date(pta.starts_at).toLocaleTimeString("en-US", { hour:"numeric", hour12: false, timeZone: CHURCH_CONFIG.timezone });
+              if (parseInt(ptHour) >= 18 || parseInt(ptHour) < 5) continue;
+            }
             const tName = pta.name
               || (pta.starts_at ? new Date(pta.starts_at).toLocaleTimeString("en-US", { hour:"numeric", minute:"2-digit" }) : "");
             if (tName) planTimeMap[pt.id] = tName;
@@ -361,6 +368,13 @@ async function buildData(weeks) {
       for (const inc of included) {
         if ((inc.type === "PlanTime" || inc.type === "plan_time") && inc.id && !planTimeMap[inc.id]) {
           const pta = inc.attributes || {};
+          // Skip rehearsal and other time types
+          if (pta.time_type === "rehearsal" || pta.time_type === "other") continue;
+          // Skip evening times (6 PM+)
+          if (pta.starts_at) {
+            const ptHour = new Date(pta.starts_at).toLocaleTimeString("en-US", { hour:"numeric", hour12: false, timeZone: CHURCH_CONFIG.timezone });
+            if (parseInt(ptHour) >= 18 || parseInt(ptHour) < 5) continue;
+          }
           const tName = pta.name
             || (pta.starts_at ? new Date(pta.starts_at).toLocaleTimeString("en-US", { hour:"numeric", minute:"2-digit" }) : "");
           if (tName) planTimeMap[inc.id] = tName;
