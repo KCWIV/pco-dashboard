@@ -57,6 +57,7 @@ let savedCreds     = null;
 let dataCache      = {};  // keyed by weeks count: { "8": { ts, payload }, "26": { ts, payload } }
 let peopleDataCache     = null; // { ts, payload } — new member growth + at-risk congregants
 let lifegroupsCache    = null; // { ts, payload } — life groups from PCO Groups API
+let birthdaysCache     = null; // { ts, payload } — all active people with birthdays
 let progressClients = [];
 let globalTeamNameMap = {};  // persistent: team_id → team_name (rarely changes)
 let apiCallCount   = 0;     // per-request counter for diagnostics
@@ -2244,66 +2245,6 @@ const server = http.createServer(async (req, res) => {
           '<div class="kpi"><div class="kpi-label">Decisions</div><div class="kpi-value">' + fmt(decCurr) + '</div><div class="kpi-delta">' + fmt(decTotal) + ' in last ' + weeks + ' weeks</div><div class="kpi-spark">' + miniSparkSvg(D.decisions, '#7c3aed', 80, 24) + '</div></div>' +
         '</div>' +
 
-        // ── First-Time Volunteers
-        (ftNames.length > 0 ?
-          '<div class="section">' +
-            '<div class="section-title"><div class="dot" style="background:#7c3aed"></div>First-Time Volunteers — ' + ftConfirmed + ' confirmed, ' + (ftNames.length - ftConfirmed) + ' pending</div>' +
-            ftNames.map(f => {
-              const initials = f.name.split(" ").map(w => (w[0]||"")).join("").slice(0,2).toUpperCase();
-              const badgeClass = f.status === "C" ? "badge-green" : "badge-amber";
-              const badgeText = f.status === "C" ? "Confirmed" : "Pending";
-              return '<div class="ft-row"><div class="ft-avatar">' + initials + '</div><div style="flex:1"><div class="ft-name">' + f.name + '</div><div class="ft-meta">Next Step Team · First Serve Volunteer' + (f.serviceTime ? ' · ' + f.serviceTime : '') + '</div></div><span class="badge ' + badgeClass + '">' + badgeText + '</span></div>';
-            }).join("") +
-          '</div>' : '') +
-
-        // ── Volunteer Coverage + Life Groups (two columns)
-        '<div class="section"><div class="two-col">' +
-
-          // Left: Team Coverage
-          '<div>' +
-            '<div class="section-title"><div class="dot" style="background:#16a34a"></div>Team Coverage</div>' +
-            '<div style="display:flex;gap:12px;margin-bottom:12px">' +
-              '<span class="badge badge-green">' + teamsAbove90 + ' at 90%+</span>' +
-              '<span class="badge badge-red">' + teamsBelow70 + ' below 70%</span>' +
-            '</div>' +
-            (topNeeds.length > 0 ?
-              '<table><thead><tr><th>Team Needing Coverage</th><th style="text-align:right">Rate</th></tr></thead><tbody>' +
-              topNeeds.map(t => {
-                const c = t.coverage >= 70 ? "#16a34a" : t.coverage >= 50 ? "#d97706" : "#dc2626";
-                return '<tr><td>' + t.name + '</td><td style="text-align:right"><span style="color:' + c + ';font-weight:600">' + t.coverage + '%</span><div class="progress-bar" style="width:80px;display:inline-block;margin-left:8px;vertical-align:middle"><div class="progress-fill" style="width:' + t.coverage + '%;background:' + c + '"></div></div></td></tr>';
-              }).join("") +
-              '</tbody></table>' : '<div style="color:#6b7280;font-size:13px">All teams above 70% — great coverage!</div>') +
-          '</div>' +
-
-          // Right: Life Groups
-          '<div>' +
-            '<div class="section-title"><div class="dot" style="background:#5AAEE0"></div>Life Groups</div>' +
-            (lgStats ?
-              '<table><tbody>' +
-                '<tr><td>Active Groups</td><td style="text-align:right;font-weight:600">' + lgStats.total + '</td></tr>' +
-                '<tr><td>Total Enrolled</td><td style="text-align:right;font-weight:600">' + fmt(lgStats.totalEnrolled) + '</td></tr>' +
-                '<tr><td>Avg Group Size</td><td style="text-align:right;font-weight:600">' + lgStats.avgSize + '</td></tr>' +
-                '<tr><td>Healthy Groups (5–25)</td><td style="text-align:right"><span class="badge badge-green">' + lgStats.healthyGroups + '</span></td></tr>' +
-                '<tr><td>Small Groups (&lt;5)</td><td style="text-align:right"><span class="badge badge-amber">' + lgStats.smallGroups + '</span></td></tr>' +
-              '</tbody></table>'
-              : '<div style="color:#6b7280;font-size:13px">Life group data not yet loaded — visit the Life Groups tab first</div>') +
-          '</div>' +
-
-        '</div></div>' +
-
-        // ── At-Risk Volunteers
-        (atRisk.length > 0 ?
-          '<div class="section">' +
-            '<div class="section-title"><div class="dot" style="background:#dc2626"></div>At-Risk Volunteers (' + atRisk.length + ')</div>' +
-            '<div style="color:#6b7280;font-size:12px;margin-bottom:10px">Served consistently in recent weeks but haven\'t shown up lately</div>' +
-            '<table><thead><tr><th>Name</th><th>Team</th><th>Last Served</th><th style="text-align:right">Prior Activity</th></tr></thead><tbody>' +
-            atRisk.slice(0, 8).map(v => {
-              return '<tr><td style="font-weight:500">' + v.name + '</td><td style="color:#6b7280">' + (v.teams && v.teams.length ? v.teams[0] : '—') + '</td><td style="color:#6b7280">' + (v.lastServeLabel || '—') + '</td><td style="text-align:right"><span class="badge badge-red">' + v.priorServes + '× in ' + (v.weeksMissing*3) + 'wks</span></td></tr>';
-            }).join("") +
-            (atRisk.length > 8 ? '<tr><td colspan="4" style="color:#9ca3af;font-size:12px;text-align:center">+ ' + (atRisk.length - 8) + ' more — view full list on the dashboard</td></tr>' : '') +
-            '</tbody></table>' +
-          '</div>' : '') +
-
         // ── Attendance Trend Table
         '<div class="section">' +
           '<div class="section-title"><div class="dot" style="background:#5AAEE0"></div>4-Week Trend</div>' +
@@ -2323,6 +2264,42 @@ const server = http.createServer(async (req, res) => {
           }).join("") +
           '</tbody></table>' +
         '</div>' +
+
+        // ── Upcoming Birthdays
+        (() => {
+          const bd = birthdaysCache ? birthdaysCache.payload : null;
+          if (!bd || !bd.thisWeek || bd.thisWeek.length === 0) {
+            // Try to build birthday data inline
+            return '<div class="section">' +
+              '<div class="section-title"><div class="dot" style="background:#d97706"></div>Upcoming Birthdays</div>' +
+              '<div style="color:#6b7280;font-size:13px">Birthday data not yet loaded — visit the Birthdays tab first</div>' +
+            '</div>';
+          }
+          const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+          return '<div class="section">' +
+            '<div class="section-title"><div class="dot" style="background:#d97706"></div>Upcoming Birthdays — ' + bd.thisWeek.length + ' this week</div>' +
+            bd.thisWeek.map(p => {
+              const initials = p.name.split(" ").map(w => (w[0]||"")).join("").slice(0,2).toUpperCase();
+              const dayLabel = p.daysUntil === 0 ? "Today!" : p.daysUntil === 1 ? "Tomorrow" : "in " + p.daysUntil + " days";
+              const bdLabel = monthNames[p.month-1] + " " + p.day;
+              const avatarBg = p.daysUntil === 0 ? "#d97706" : "#fef3c7";
+              const avatarColor = p.daysUntil === 0 ? "#fff" : "#d97706";
+              return '<div class="ft-row"><div class="ft-avatar" style="background:' + avatarBg + ';color:' + avatarColor + '">' + initials + '</div><div style="flex:1"><div class="ft-name">' + p.name + '</div><div class="ft-meta">' + bdLabel + '</div></div><span class="badge badge-amber">' + dayLabel + '</span></div>';
+            }).join("") +
+          '</div>';
+        })() +
+
+        // ── First-Time Volunteers
+        (ftNames.length > 0 ?
+          '<div class="section">' +
+            '<div class="section-title"><div class="dot" style="background:#7c3aed"></div>First-Time Volunteers — ' + ftConfirmed + ' confirmed, ' + (ftNames.length - ftConfirmed) + ' pending</div>' +
+            ftNames.map(f => {
+              const initials = f.name.split(" ").map(w => (w[0]||"")).join("").slice(0,2).toUpperCase();
+              const badgeClass = f.status === "C" ? "badge-green" : "badge-amber";
+              const badgeText = f.status === "C" ? "Confirmed" : "Pending";
+              return '<div class="ft-row"><div class="ft-avatar">' + initials + '</div><div style="flex:1"><div class="ft-name">' + f.name + '</div><div class="ft-meta">' + (f.serviceTime || '') + '</div></div><span class="badge ' + badgeClass + '">' + badgeText + '</span></div>';
+            }).join("") +
+          '</div>' : '') +
 
         // ── Footer
         '<div class="footer">Generated ' + now.toLocaleString("en-US", { timeZone: "America/Chicago" }) + ' CT · City Church Chicago · <a href="/" style="color:#5AAEE0">Open Dashboard</a></div>' +
@@ -2503,6 +2480,85 @@ const server = http.createServer(async (req, res) => {
 
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify(out, null, 2));
+    } catch(e) {
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
+  // ── Birthdays data endpoint ──────────────────────────────────────────────────
+  if (req.method === "GET" && parsed.pathname === "/birthdays-data") {
+    if (!savedCreds) { res.writeHead(401); return res.end(JSON.stringify({error:"Not authenticated"})); }
+    const forceRefresh = parsed.searchParams.get("refresh") === "1";
+    const BIRTHDAY_TTL = 6 * 60 * 60 * 1000; // 6 hour cache
+    if (birthdaysCache && !forceRefresh && (Date.now() - birthdaysCache.ts < BIRTHDAY_TTL)) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify(birthdaysCache.payload));
+    }
+    try {
+      // Fetch all active people who have a birthdate set
+      const people = [];
+      let nextUrl = "/people/v2/people?where[status]=active&per_page=100&fields[Person]=first_name,last_name,birthdate";
+      let pageCount = 0;
+      while (nextUrl && pageCount < 200) { // cap at 20K people
+        const r = await pcoFetch(nextUrl);
+        for (const p of (r.body.data || [])) {
+          const a = p.attributes;
+          if (!a.birthdate) continue; // skip people without birthdays
+          const bd = a.birthdate; // "YYYY-MM-DD"
+          const month = parseInt(bd.split("-")[1]);
+          const day = parseInt(bd.split("-")[2]);
+          people.push({
+            id: p.id,
+            name: (a.first_name || "") + " " + (a.last_name || ""),
+            birthdate: bd,
+            month, day
+          });
+        }
+        const next = r.body.links && r.body.links.next;
+        if (next) { const u = new URL(next); nextUrl = u.pathname + u.search; } else { nextUrl = null; }
+        pageCount++;
+      }
+
+      // Sort by month/day for calendar ordering
+      people.sort((a, b) => a.month - b.month || a.day - b.day);
+
+      // Find upcoming birthdays (next 14 days)
+      const now = new Date();
+      const todayM = now.getMonth() + 1;
+      const todayD = now.getDate();
+      const upcoming = [];
+      const thisWeek = [];
+      for (const p of people) {
+        // Days until birthday (handles year wrap)
+        const bdThisYear = new Date(now.getFullYear(), p.month - 1, p.day);
+        let diff = Math.round((bdThisYear - new Date(now.getFullYear(), todayM - 1, todayD)) / 86400000);
+        if (diff < 0) diff += 365; // birthday already passed this year
+        if (diff <= 14) upcoming.push({ ...p, daysUntil: diff });
+        if (diff <= 7) thisWeek.push({ ...p, daysUntil: diff });
+      }
+      upcoming.sort((a, b) => a.daysUntil - b.daysUntil);
+      thisWeek.sort((a, b) => a.daysUntil - b.daysUntil);
+
+      // Monthly counts for calendar view
+      const monthCounts = new Array(12).fill(0);
+      people.forEach(p => { monthCounts[p.month - 1]++; });
+
+      // Today's birthdays
+      const today = people.filter(p => p.month === todayM && p.day === todayD);
+
+      const payload = {
+        total: people.length,
+        allBirthdays: people,
+        upcoming, thisWeek, today,
+        monthCounts,
+        fetchedAt: new Date().toISOString()
+      };
+      birthdaysCache = { ts: Date.now(), payload };
+      console.log("✅ Birthdays data built — " + people.length + " people with birthdays, " + upcoming.length + " upcoming");
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(payload));
     } catch(e) {
       res.writeHead(500, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: e.message }));

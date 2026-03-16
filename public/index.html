@@ -300,6 +300,9 @@ input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(90,174,224,.15);
 <button class="nav-item" data-tab="lifegroups" onclick="switchTab('lifegroups')">
         <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></span> Life Groups
       </button>
+      <button class="nav-item" data-tab="birthdays" onclick="switchTab('birthdays')">
+        <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span> Birthdays
+      </button>
     </nav>
     <div class="sidebar-section" style="margin-top:12px">Reports</div>
     <nav>
@@ -378,6 +381,7 @@ function toggleFTMenu(key){
 }
 var P=null, peopleLoading=false;
 var LG=null, lgLoading=false;
+var BD=null, bdLoading=false, bdSelectedMonth=null;
 var volSearchQuery='', currentVolDetail=null, volDetailRange=null;
 var _volAvatarColors=['#5b8dee','#10d9a0','#b76cfd','#ff7e3f','#ff5c7a','#ffc53d','#22d3ee'];
 function avatarColor(name){var h=0;for(var i=0;i<(name||'').length;i++)h=(h*31+name.charCodeAt(i))&0xffff;return _volAvatarColors[h%_volAvatarColors.length];}
@@ -541,6 +545,128 @@ async function loadLifeGroupsData(force){
   }catch(e){LG={error:e.message};}
   finally{lgLoading=false;}
   if(activeTab==='lifegroups')renderLifeGroupsTab();
+}
+
+// ── Birthdays ──────────────────────────────────────────────────────────────────
+async function loadBirthdaysData(force){
+  if(bdLoading)return;
+  if(BD&&!force){renderBirthdaysTab();return;}
+  bdLoading=true;
+  renderBirthdaysTab();
+  try{
+    var r=await fetch('/birthdays-data'+(force?'?refresh=1':''));
+    BD=await r.json();
+    if(BD.error)throw new Error(BD.error);
+  }catch(e){BD={error:e.message};}
+  finally{bdLoading=false;}
+  if(activeTab==='birthdays')renderBirthdaysTab();
+}
+var bdSearchQuery='';
+function renderBirthdaysTab(){
+  if(!BD||bdLoading){
+    $('content').innerHTML='<div style="text-align:center;padding:60px 0;color:var(--muted)">Loading birthdays…</div>';
+    return;
+  }
+  if(BD.error){
+    $('content').innerHTML='<div class="panel" style="color:var(--red)">Error: '+esc(BD.error)+'</div>';
+    return;
+  }
+  var monthNames=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var fullMonths=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  var now=new Date();
+  var curMonth=now.getMonth();
+  if(bdSelectedMonth===null) bdSelectedMonth=curMonth;
+
+  // Monthly calendar grid
+  var maxMonthCount=Math.max.apply(null,BD.monthCounts);
+  var calGrid='';
+  for(var mi=0;mi<12;mi++){
+    var cnt=BD.monthCounts[mi];
+    var pct=maxMonthCount?Math.round(cnt/maxMonthCount*100):0;
+    var isActive=mi===bdSelectedMonth;
+    var isCurrent=mi===curMonth;
+    calGrid+='<div onclick="bdSelectedMonth='+mi+';renderBirthdaysTab();" style="cursor:pointer;padding:12px 8px;text-align:center;border-radius:10px;border:1.5px solid '+(isActive?'var(--accent)':'transparent')+';background:'+(isActive?'var(--accent-bg,#dbeafe)':'var(--card)')+';transition:all .15s">'+
+      '<div style="font-size:12px;font-weight:600;color:'+(isCurrent?'var(--accent)':'var(--muted)')+';margin-bottom:6px">'+monthNames[mi]+'</div>'+
+      '<div style="font-size:20px;font-weight:700;color:var(--text)">'+cnt+'</div>'+
+      '<div style="height:4px;background:var(--border);border-radius:99px;margin-top:6px;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:var(--accent);border-radius:99px"></div></div>'+
+    '</div>';
+  }
+
+  // People with birthdays in selected month
+  var selectedPeople=BD.allBirthdays.filter(function(p){return p.month===bdSelectedMonth+1;});
+  selectedPeople.sort(function(a,b){return a.day-b.day;});
+
+  // Filter by search
+  var filtered=selectedPeople;
+  if(bdSearchQuery){
+    var q=bdSearchQuery.toLowerCase();
+    filtered=selectedPeople.filter(function(p){return p.name.toLowerCase().indexOf(q)>=0;});
+  }
+
+  // Group by day
+  var dayGroups={};
+  filtered.forEach(function(p){
+    if(!dayGroups[p.day]) dayGroups[p.day]=[];
+    dayGroups[p.day].push(p);
+  });
+
+  var listHtml='';
+  Object.keys(dayGroups).sort(function(a,b){return a-b;}).forEach(function(day){
+    var people=dayGroups[day];
+    var dateLabel=fullMonths[bdSelectedMonth]+' '+day;
+    var isToday=(bdSelectedMonth===curMonth&&parseInt(day)===now.getDate());
+    listHtml+='<div style="margin-bottom:16px">'+
+      '<div style="font-weight:600;font-size:13px;color:'+(isToday?'var(--accent)':'var(--muted)')+';margin-bottom:6px;display:flex;align-items:center;gap:6px">'+
+        dateLabel+(isToday?' <span style="background:var(--accent);color:#fff;font-size:10px;padding:1px 8px;border-radius:99px;font-weight:600">TODAY</span>':'')+
+      '</div>';
+    people.forEach(function(p){
+      var initials=p.name.split(' ').map(function(w){return(w[0]||'');}).join('').slice(0,2).toUpperCase();
+      listHtml+='<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border)">'+
+        '<div style="width:32px;height:32px;border-radius:8px;background:var(--accent-bg,#dbeafe);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">'+initials+'</div>'+
+        '<div style="flex:1"><div style="font-weight:600;font-size:14px">'+esc(p.name)+'</div></div>'+
+      '</div>';
+    });
+    listHtml+='</div>';
+  });
+
+  // Upcoming birthdays (next 7 days)
+  var upcomingHtml='';
+  (BD.thisWeek||[]).forEach(function(p){
+    var initials=p.name.split(' ').map(function(w){return(w[0]||'');}).join('').slice(0,2).toUpperCase();
+    var dayLabel=p.daysUntil===0?'Today':p.daysUntil===1?'Tomorrow':'in '+p.daysUntil+' days';
+    var bdLabel=fullMonths[p.month-1]+' '+p.day;
+    upcomingHtml+='<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">'+
+      '<div style="width:32px;height:32px;border-radius:8px;background:'+(p.daysUntil===0?'var(--accent)':'var(--accent-bg,#dbeafe)')+';color:'+(p.daysUntil===0?'#fff':'var(--accent)')+';display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">'+initials+'</div>'+
+      '<div style="flex:1"><div style="font-weight:600;font-size:14px">'+esc(p.name)+'</div><div style="font-size:12px;color:var(--muted)">'+bdLabel+'</div></div>'+
+      '<span style="font-size:12px;font-weight:600;color:'+(p.daysUntil===0?'var(--accent)':'var(--muted)')+'">'+dayLabel+'</span>'+
+    '</div>';
+  });
+
+  $('content').innerHTML=
+    '<div class="stat-grid">'+
+      statCard({label:'Total Birthdays',value:fmt(BD.total),sub:'Active members with birthday on file',accent:'var(--accent)'})+
+      statCard({label:'This Week',value:fmt((BD.thisWeek||[]).length),sub:'Upcoming in next 7 days',accent:'var(--green)'})+
+      statCard({label:'Today',value:fmt((BD.today||[]).length),sub:(BD.today||[]).map(function(p){return p.name.split(' ')[0];}).join(', ')||'No birthdays today',accent:'var(--purple)'})+
+      statCard({label:fullMonths[bdSelectedMonth],value:fmt(BD.monthCounts[bdSelectedMonth]),sub:'Birthdays this month',accent:'var(--amber)'})+
+    '</div>'+
+    '<div class="panel">'+
+      '<div class="panel-title">Birthday Calendar</div>'+
+      '<div class="panel-sub">Click a month to see all birthdays</div>'+
+      '<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-top:12px">'+calGrid+'</div>'+
+    '</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">'+
+      '<div class="panel">'+
+        '<div class="panel-title">'+fullMonths[bdSelectedMonth]+' Birthdays</div>'+
+        '<div class="panel-sub">'+filtered.length+' birthday'+(filtered.length===1?'':'s')+'</div>'+
+        '<div style="margin-bottom:10px"><input class="vol-search" type="text" placeholder="Search names…" value="'+esc(bdSearchQuery)+'" oninput="bdSearchQuery=this.value;renderBirthdaysTab();"/></div>'+
+        (Object.keys(dayGroups).length===0?'<div style="color:var(--muted);text-align:center;padding:20px">No birthdays found</div>':listHtml)+
+      '</div>'+
+      '<div class="panel">'+
+        '<div class="panel-title">Upcoming This Week</div>'+
+        '<div class="panel-sub">Next 7 days</div>'+
+        (upcomingHtml||'<div style="color:var(--muted);text-align:center;padding:20px">No upcoming birthdays</div>')+
+      '</div>'+
+    '</div>';
 }
 
 var lgSearchQuery='';
@@ -922,9 +1048,10 @@ function switchTab(t){
   document.querySelectorAll('.nav-item').forEach(function(el){
     el.classList.toggle('active',el.getAttribute('data-tab')===t);
   });
-  var titles={overview:'Dashboard',citykids:'City Kids',volunteers:'Volunteers',attendance:'Attendance',teams:'Teams',lifegroups:'Life Groups'};
+  var titles={overview:'Dashboard',citykids:'City Kids',volunteers:'Volunteers',attendance:'Attendance',teams:'Teams',lifegroups:'Life Groups',birthdays:'Birthdays'};
   var ptEl=$('page-title');if(ptEl)ptEl.textContent=titles[t]||'Dashboard';
   if(t==='lifegroups'&&!isDemo)loadLifeGroupsData();
+  else if(t==='birthdays'&&!isDemo)loadBirthdaysData();
   else renderContent();
 }
 function renderAll(){
