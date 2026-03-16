@@ -381,7 +381,7 @@ function toggleFTMenu(key){
 }
 var P=null, peopleLoading=false;
 var LG=null, lgLoading=false;
-var BD=null, bdLoading=false, bdSelectedMonth=null;
+var BD=null, bdLoading=false, bdSelectedMonth=null, bdMonthExpanded=false;
 var volSearchQuery='', currentVolDetail=null, volDetailRange=null;
 var _volAvatarColors=['#5b8dee','#10d9a0','#b76cfd','#ff7e3f','#ff5c7a','#ffc53d','#22d3ee'];
 function avatarColor(name){var h=0;for(var i=0;i<(name||'').length;i++)h=(h*31+name.charCodeAt(i))&0xffff;return _volAvatarColors[h%_volAvatarColors.length];}
@@ -635,9 +635,13 @@ function renderBirthdaysTab(){
     var initials=p.name.split(' ').map(function(w){return(w[0]||'');}).join('').slice(0,2).toUpperCase();
     var dayLabel=p.daysUntil===0?'Today':p.daysUntil===1?'Tomorrow':'in '+p.daysUntil+' days';
     var bdLabel=fullMonths[p.month-1]+' '+p.day;
+    // Calculate age they're turning
+    var birthYear=parseInt(p.birthdate.split('-')[0]);
+    var turningAge=now.getFullYear()-birthYear;
+    var ageLabel=birthYear>1900&&birthYear<now.getFullYear()?'Turning '+turningAge:'';
     upcomingHtml+='<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">'+
       '<div style="width:32px;height:32px;border-radius:8px;background:'+(p.daysUntil===0?'var(--accent)':'var(--accent-bg,#dbeafe)')+';color:'+(p.daysUntil===0?'#fff':'var(--accent)')+';display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">'+initials+'</div>'+
-      '<div style="flex:1"><div style="font-weight:600;font-size:14px">'+esc(p.name)+'</div><div style="font-size:12px;color:var(--muted)">'+bdLabel+'</div></div>'+
+      '<div style="flex:1"><div style="font-weight:600;font-size:14px">'+esc(p.name)+'</div><div style="font-size:12px;color:var(--muted)">'+bdLabel+(ageLabel?' · '+ageLabel:'')+'</div></div>'+
       '<span style="font-size:12px;font-weight:600;color:'+(p.daysUntil===0?'var(--accent)':'var(--muted)')+'">'+dayLabel+'</span>'+
     '</div>';
   });
@@ -654,18 +658,20 @@ function renderBirthdaysTab(){
       '<div class="panel-sub">Click a month to see all birthdays</div>'+
       '<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-top:12px">'+calGrid+'</div>'+
     '</div>'+
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">'+
-      '<div class="panel">'+
-        '<div class="panel-title">'+fullMonths[bdSelectedMonth]+' Birthdays</div>'+
-        '<div class="panel-sub">'+filtered.length+' birthday'+(filtered.length===1?'':'s')+'</div>'+
-        '<div style="margin-bottom:10px"><input class="vol-search" type="text" placeholder="Search names…" value="'+esc(bdSearchQuery)+'" oninput="bdSearchQuery=this.value;renderBirthdaysTab();"/></div>'+
-        (Object.keys(dayGroups).length===0?'<div style="color:var(--muted);text-align:center;padding:20px">No birthdays found</div>':listHtml)+
+    '<div class="panel">'+
+      '<div class="panel-title">Upcoming This Week</div>'+
+      '<div class="panel-sub">Next 7 days</div>'+
+      (upcomingHtml||'<div style="color:var(--muted);text-align:center;padding:20px">No upcoming birthdays</div>')+
+    '</div>'+
+    '<div class="panel">'+
+      '<div class="vol-list-header" style="cursor:pointer" onclick="bdMonthExpanded=!bdMonthExpanded;renderBirthdaysTab();">'+
+        '<div><div class="panel-title">'+fullMonths[bdSelectedMonth]+' Birthdays</div><div class="panel-sub" style="margin-bottom:0">'+filtered.length+' birthday'+(filtered.length===1?'':'s')+' · click to '+(bdMonthExpanded?'collapse':'expand')+'</div></div>'+
+        '<span style="font-size:18px;color:var(--muted);transition:transform .2s;display:inline-block;transform:rotate('+(bdMonthExpanded?'180':'0')+'deg)">▼</span>'+
       '</div>'+
-      '<div class="panel">'+
-        '<div class="panel-title">Upcoming This Week</div>'+
-        '<div class="panel-sub">Next 7 days</div>'+
-        (upcomingHtml||'<div style="color:var(--muted);text-align:center;padding:20px">No upcoming birthdays</div>')+
-      '</div>'+
+      (bdMonthExpanded?
+        '<div style="margin-bottom:10px"><input class="vol-search" id="bd-search-input" type="text" placeholder="Search names…" value="'+esc(bdSearchQuery)+'" oninput="bdSearchQuery=this.value;renderBirthdaysTab();var el=document.getElementById(\'bd-search-input\');if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}"/></div>'+
+        (Object.keys(dayGroups).length===0?'<div style="color:var(--muted);text-align:center;padding:20px">No birthdays found</div>':listHtml)
+      :'')+
     '</div>';
 }
 
@@ -2306,7 +2312,8 @@ function switchNewFamilyWeek(wi){
     var sr=await fetch('/status');
     var status=await sr.json();
     if(status.authenticated){
-      // Server already has creds — skip the modal and load data automatically
+      // Server already has creds — hide modal immediately and show loading
+      hideModal();
       setLoading(true);
       startProgress();
       try{
@@ -2315,11 +2322,9 @@ function switchNewFamilyWeek(wi){
         D=await dr.json();
         if(D.error)throw new Error(D.error);
         isDemo=false;selectedMultiWeek=D.labels.length-1;selectedKidsMultiWeek=D.labels.length-1;
-        initChartData();hideModal();await loadFTAssignments();renderAll();
+        initChartData();await loadFTAssignments();renderAll();
       }catch(e){
-        // If auto-load fails, show the modal so user can re-enter creds
-        $('modal-error').textContent='⚠ Auto-connect failed: '+e.message;
-        $('modal-error').style.display='block';
+        showError('Failed to load data: '+e.message);
       }finally{setLoading(false);stopProgress();}
     }
   }catch(e){/* server not reachable yet — just show modal */}

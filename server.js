@@ -2284,7 +2284,9 @@ const server = http.createServer(async (req, res) => {
               const bdLabel = monthNames[p.month-1] + " " + p.day;
               const avatarBg = p.daysUntil === 0 ? "#d97706" : "#fef3c7";
               const avatarColor = p.daysUntil === 0 ? "#fff" : "#d97706";
-              return '<div class="ft-row"><div class="ft-avatar" style="background:' + avatarBg + ';color:' + avatarColor + '">' + initials + '</div><div style="flex:1"><div class="ft-name">' + p.name + '</div><div class="ft-meta">' + bdLabel + '</div></div><span class="badge badge-amber">' + dayLabel + '</span></div>';
+              const birthYear = parseInt(p.birthdate.split("-")[0]);
+              const turningAge = birthYear > 1900 && birthYear < now.getFullYear() ? " · Turning " + (now.getFullYear() - birthYear) : "";
+              return '<div class="ft-row"><div class="ft-avatar" style="background:' + avatarBg + ';color:' + avatarColor + '">' + initials + '</div><div style="flex:1"><div class="ft-name">' + p.name + '</div><div class="ft-meta">' + bdLabel + turningAge + '</div></div><span class="badge badge-amber">' + dayLabel + '</span></div>';
             }).join("") +
           '</div>';
         })() +
