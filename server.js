@@ -412,7 +412,7 @@ async function buildData(weeks) {
         // First-time volunteers: "Next Step Team" + "First Serve Volunteer" position
         if (team === "Next Step Team" && pos === "First Serve Volunteer") {
           if (s === "C") firstTimers[wi]++;
-          firstTimerNames[wi].push({ name, status: s, serviceTime: svcTime || "" });
+          firstTimerNames[wi].push({ name, pid, status: s, serviceTime: svcTime || "" });
         }
 
         const pKey = pid || name;
@@ -2012,6 +2012,41 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(500, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: e.message }));
     }
+    return;
+  }
+
+  // ── First-timer team assignments (persistent JSON file) ─────────────────────
+  const FT_ASSIGNMENTS_FILE = path.join(__dirname, ".ft-assignments.json");
+  function loadFTAssignments() {
+    try { return JSON.parse(fs.readFileSync(FT_ASSIGNMENTS_FILE, "utf8")); }
+    catch(e) { return {}; }
+  }
+  function saveFTAssignments(data) {
+    fs.writeFileSync(FT_ASSIGNMENTS_FILE, JSON.stringify(data, null, 2));
+  }
+
+  if (req.method === "GET" && parsed.pathname === "/ft-assignments") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    return res.end(JSON.stringify(loadFTAssignments()));
+  }
+
+  if (req.method === "POST" && parsed.pathname === "/ft-assignments") {
+    let body = "";
+    req.on("data", d => (body += d));
+    req.on("end", () => {
+      try {
+        const { key, team } = JSON.parse(body);
+        if (!key) { res.writeHead(400); return res.end(JSON.stringify({ error: "Missing key" })); }
+        const data = loadFTAssignments();
+        if (team) { data[key] = team; } else { delete data[key]; }
+        saveFTAssignments(data);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true }));
+      } catch(e) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Invalid request" }));
+      }
+    });
     return;
   }
 

@@ -346,6 +346,34 @@ input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(90,174,224,.15);
 
 <script>
 var D=null, activeTab='overview', isDemo=false, selectedMultiWeek=null, selectedKidsMultiWeek=null, currentWeeks=4;
+var ftAssignments={};
+// Shadow team options for first-time volunteers
+var SHADOW_TEAMS=['Outdoor','Auditorium','City Kids','Connect Bar','Production','Worship','Parking','Prayer','First Impressions','Social Media','Other'];
+async function loadFTAssignments(){
+  try{var r=await fetch('/ft-assignments');ftAssignments=await r.json();}catch(e){ftAssignments={};}
+}
+async function setFTTeam(key,team){
+  ftAssignments[key]=team;
+  try{await fetch('/ft-assignments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:key,team:team})});}catch(e){}
+  if(activeTab==='volunteers')renderContent();
+}
+function toggleFTMenu(key){
+  var el=document.getElementById('ft-menu-'+key);
+  if(!el)return;
+  var isOpen=el.style.display==='block';
+  // Close all menus first
+  document.querySelectorAll('.ft-menu').forEach(function(m){m.style.display='none';});
+  if(!isOpen){
+    el.style.display='block';
+    // Close on outside click
+    setTimeout(function(){
+      document.addEventListener('click',function handler(){
+        el.style.display='none';
+        document.removeEventListener('click',handler);
+      },{once:true});
+    },0);
+  }
+}
 var P=null, peopleLoading=false;
 var LG=null, lgLoading=false;
 var volSearchQuery='', currentVolDetail=null, volDetailRange=null;
@@ -478,7 +506,7 @@ async function connectPCO(){
     D=await dr.json();
     if(D.error)throw new Error(D.error);
     isDemo=false;selectedMultiWeek=D.labels.length-1;selectedKidsMultiWeek=D.labels.length-1;
-    initChartData();hideModal();renderAll();
+    initChartData();hideModal();await loadFTAssignments();renderAll();
   }catch(e){
     $('modal-error').textContent='⚠ '+e.message;$('modal-error').style.display='block';
   }finally{setLoading(false);stopProgress();}
@@ -1639,15 +1667,35 @@ function renderContent(){
     if(ftTotal>0){
       var ftRows=ftNames.map(function(f){
         var sc=statusColor(f.status);
-        return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">'+
+        var ftKey=(f.pid||f.name)+'_'+D.labels[li];
+        var assignedTeam=ftAssignments[ftKey]||'';
+        var teamBadge='';
+        if(assignedTeam){
+          teamBadge='<span style="display:inline-flex;align-items:center;gap:4px;background:var(--accent)12;color:var(--accent);border:1px solid var(--accent)33;border-radius:99px;padding:2px 10px;font-size:11px;font-weight:600;cursor:pointer" onclick="event.stopPropagation();toggleFTMenu(\''+ftKey+'\')">'+
+            esc(assignedTeam)+' <span style="font-size:9px">✕</span></span>';
+        } else {
+          teamBadge='<span style="display:inline-flex;align-items:center;gap:4px;background:var(--surface);color:var(--muted);border:1px solid var(--border);border-radius:99px;padding:2px 10px;font-size:11px;font-weight:500;cursor:pointer" onclick="event.stopPropagation();toggleFTMenu(\''+ftKey+'\')">+ Assign Team</span>';
+        }
+        return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);position:relative">'+
           '<div style="width:32px;height:32px;border-radius:8px;background:var(--purple)15;color:var(--purple);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0">'+
             (f.name?f.name.split(' ').map(function(w){return w[0]||'';}).join('').slice(0,2).toUpperCase():'')+
           '</div>'+
           '<div style="flex:1;min-width:0">'+
-            '<div style="font-size:13px;font-weight:600;color:var(--text)">'+esc(f.name)+'</div>'+
-            '<div style="font-size:11px;color:var(--muted)">'+(f.team?esc(f.team):'Next Step Team')+' · '+(f.position?esc(f.position):'First Serve Volunteer')+(f.serviceTime?' · '+esc(f.serviceTime):'')+'</div>'+
+            '<div style="display:flex;align-items:center;gap:8px">'+
+              '<span style="font-size:13px;font-weight:600;color:var(--text)">'+esc(f.name)+'</span>'+
+              teamBadge+
+            '</div>'+
+            '<div style="font-size:11px;color:var(--muted);margin-top:2px">'+(f.serviceTime?esc(f.serviceTime)+' · ':'')+'First Serve Volunteer</div>'+
           '</div>'+
           '<span class="sbadge" style="background:'+sc+'22;color:'+sc+';border:1px solid '+sc+'44">'+statusLabel(f.status)+'</span>'+
+          '<div class="ft-menu" id="ft-menu-'+ftKey+'" style="display:none;position:absolute;top:100%;left:42px;background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:50;padding:5px;min-width:180px">'+
+            SHADOW_TEAMS.map(function(t){
+              var isActive=t===assignedTeam;
+              return '<div style="padding:8px 12px;border-radius:7px;font-size:13px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;'+(isActive?'color:var(--accent);font-weight:600;background:var(--brand-light)':'color:var(--text)')+'" onclick="event.stopPropagation();setFTTeam(\''+ftKey+'\',\''+(isActive?'':t)+'\')">'+
+                esc(t)+(isActive?'<span style="font-size:11px">✓</span>':'')+
+              '</div>';
+            }).join('')+
+          '</div>'+
         '</div>';
       }).join('');
       ftListHtml='<div class="panel" style="--panel-dot:var(--teal)">'+
@@ -1972,7 +2020,7 @@ function switchKidsMultiWeek(wi){
         D=await dr.json();
         if(D.error)throw new Error(D.error);
         isDemo=false;selectedMultiWeek=D.labels.length-1;selectedKidsMultiWeek=D.labels.length-1;
-        initChartData();hideModal();renderAll();
+        initChartData();hideModal();await loadFTAssignments();renderAll();
       }catch(e){
         // If auto-load fails, show the modal so user can re-enter creds
         $('modal-error').textContent='⚠ Auto-connect failed: '+e.message;
