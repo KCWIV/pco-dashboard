@@ -347,7 +347,7 @@ input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(90,174,224,.15);
 </div>
 
 <script>
-var D=null, activeTab='overview', isDemo=false, selectedMultiWeek=null, selectedKidsMultiWeek=null, selectedNewFamilyWeek=null, currentWeeks=4;
+var D=null, activeTab='overview', isDemo=false, selectedMultiWeek=null, selectedKidsMultiWeek=null, selectedNewFamilyWeek=null, volListExpanded=false, currentWeeks=4;
 var ftAssignments={};
 // Shadow team options for first-time volunteers
 var SHADOW_TEAMS=['Outdoor','Auditorium','City Kids','Connect Bar','Production','Worship','Parking','Prayer','First Impressions','Security','Social Media','Other'];
@@ -1846,12 +1846,17 @@ function renderContent(){
       atRiskHTML+
       ftListHtml+
       '<div class="panel" style="--panel-dot:var(--purple)">'+
-        '<div class="vol-list-header"><div><div class="panel-title">All Volunteers</div><div class="panel-sub" style="margin-bottom:0">'+allVols.length+' total · click any name to see their serve history</div></div></div>'+
-        '<div class="vol-search-wrap">'+
-          '<input class="vol-search" id="vol-search-input" type="text" placeholder="Search volunteers…" value="'+esc(volSearchQuery)+'" oninput="volSearchQuery=this.value;renderContent();var el=document.getElementById(\'vol-search-input\');if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}"/>'+
+        '<div class="vol-list-header" style="cursor:pointer" onclick="volListExpanded=!volListExpanded;renderContent();">'+
+          '<div><div class="panel-title">All Volunteers</div><div class="panel-sub" style="margin-bottom:0">'+allVols.length+' total · click to '+(volListExpanded?'collapse':'expand')+'</div></div>'+
+          '<span style="font-size:18px;color:var(--muted);transition:transform .2s;display:inline-block;transform:rotate('+(volListExpanded?'180':'0')+'deg)">▼</span>'+
         '</div>'+
-        (filteredVols.length===0?'<div style="color:var(--muted);text-align:center;padding:24px 0;font-size:13px">No volunteers match "'+esc(volSearchQuery)+'"</div>':volRows)+
-        (filteredVols.length>50?'<div style="color:var(--muted);font-size:12px;text-align:center;padding:10px 0">Showing 50 of '+filteredVols.length+' — search to filter</div>':'')+
+        (volListExpanded?
+          '<div class="vol-search-wrap">'+
+            '<input class="vol-search" id="vol-search-input" type="text" placeholder="Search volunteers…" value="'+esc(volSearchQuery)+'" oninput="volSearchQuery=this.value;renderContent();var el=document.getElementById(\'vol-search-input\');if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}"/>'+
+          '</div>'+
+          (filteredVols.length===0?'<div style="color:var(--muted);text-align:center;padding:24px 0;font-size:13px">No volunteers match "'+esc(volSearchQuery)+'"</div>':volRows)+
+          (filteredVols.length>50?'<div style="color:var(--muted);font-size:12px;text-align:center;padding:10px 0">Showing 50 of '+filteredVols.length+' — search to filter</div>':'')
+        :'')+
       '</div>'+
       '<div class="panel" style="--panel-dot:var(--amber)">'+
         '<div class="panel-title">Multi-Service Volunteers</div>'+
@@ -2068,7 +2073,6 @@ function renderContent(){
     }).join('');
 
     $('content').innerHTML=
-      '<div class="note"><strong>About attendance numbers:</strong> These figures come from Planning Center Check-Ins headcounts (usher-entered counts) or event check-in totals. If numbers look off, visit <a href="/debug" target="_blank">/debug</a> to inspect what PCO is returning.</div>'+
       '<div class="stat-grid">'+
         statCard({label:'This Week',value:fmt(D.attendance[li]),sparkData:D.attendance,accent:'var(--accent)'})+
         statCard({label:'Average',value:fmt(avg),accent:'var(--green)'})+
