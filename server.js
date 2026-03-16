@@ -923,10 +923,49 @@ async function buildData(weeks) {
   // weeklyPeople is keyed by person ID, so Object.keys gives distinct individuals
   const uniqueVolunteers = weeklyPeople.map(weekMap => Object.keys(weekMap).length);
 
+  // ── 8. New families (households created on Sundays within range) ─────────────
+  broadcast({ step: "Fetching new families…", pct: 96 });
+  const newFamiliesByWeek = new Array(N).fill(null).map(() => []);
+  const newFamiliesCount = new Array(N).fill(0);
+  try {
+    const cutoffDate = buckets[0].start.toISOString().split("T")[0];
+    let hhUrl = "/people/v2/households?order=-created_at&per_page=100&include=people";
+    let hhDone = false;
+    while (hhUrl && !hhDone) {
+      const hhRes = await pcoFetch(hhUrl);
+      for (const hh of (hhRes.body.data || [])) {
+        const createdAt = new Date(hh.attributes.created_at);
+        if (createdAt < buckets[0].start) { hhDone = true; break; }
+        // Find which bucket this falls into
+        const wi = bucketIndexFor(createdAt, buckets);
+        if (wi < 0) continue;
+        // Get household members from included data
+        const memberIds = (hh.relationships && hh.relationships.people && hh.relationships.people.data || []).map(p => p.id);
+        const included = hhRes.body.included || [];
+        const members = memberIds.map(mid => {
+          const person = included.find(i => i.id === mid && i.type === "Person");
+          return person ? { name: (person.attributes.first_name || "") + " " + (person.attributes.last_name || ""), child: person.attributes.child || false } : null;
+        }).filter(Boolean);
+        newFamiliesByWeek[wi].push({
+          name: hh.attributes.name,
+          memberCount: hh.attributes.member_count || members.length,
+          createdAt: hh.attributes.created_at,
+          primaryContact: hh.attributes.primary_contact_name,
+          members: members
+        });
+        newFamiliesCount[wi]++;
+      }
+      if (hhDone) break;
+      const next = hhRes.body.links && hhRes.body.links.next;
+      if (next) { const p = new URL(next); hhUrl = p.pathname + p.search; } else { hhUrl = null; }
+    }
+  } catch(e) { console.log("⚠ New families fetch error:", e.message); }
+  console.log("── New families by week:", newFamiliesCount.join(", "));
+
   const elapsed = ((Date.now() - buildStart) / 1000).toFixed(1);
   console.log("✅ buildData(weeks=" + weeks + ") completed in " + elapsed + "s with " + apiCallCount + " API calls");
   broadcast({ step: "Done! (" + elapsed + "s, " + apiCallCount + " API calls)", pct: 100 });
-  return { labels, grouping, weeks, attendance, attendanceByService, kidsAttendance, decisions, sundayBreakdown, scheduled, confirmed, declined, blocked, firstTimers, firstTimerNames, teams, teamsWeekly, weeklyMultiServers, uniqueVolunteers, kidsCheckinCounts, kidsCheckinByService, kidsRoomBreakdown, weeklyMultiServiceKids, uniqueKids, volunteerProfiles, atRiskVolunteers, fetchedAt: new Date().toISOString() };
+  return { labels, grouping, weeks, attendance, attendanceByService, kidsAttendance, decisions, sundayBreakdown, scheduled, confirmed, declined, blocked, firstTimers, firstTimerNames, teams, teamsWeekly, weeklyMultiServers, uniqueVolunteers, kidsCheckinCounts, kidsCheckinByService, kidsRoomBreakdown, weeklyMultiServiceKids, uniqueKids, volunteerProfiles, atRiskVolunteers, newFamiliesByWeek, newFamiliesCount, fetchedAt: new Date().toISOString() };
 }
 
 // ── /debug ────────────────────────────────────────────────────────────────────
@@ -2453,6 +2492,41 @@ const server = http.createServer(async (req, res) => {
     } catch(e) {
       res.writeHead(500, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
+  // ── Debug: Probe households API ──────────────────────────────────────────────
+  if (req.method === "GET" && parsed.pathname === "/debug-households") {
+    if (!savedCreds) { res.writeHead(401); return res.end(JSON.stringify({error:"Not authenticated"})); }
+    try {
+      const out = {};
+      // Recent households
+      const hhRes = await pcoFetch("/people/v2/households?order=-created_at&per_page=10&include=people");
+      out.totalHouseholds = hhRes.body.meta && hhRes.body.meta.total_count;
+      out.recent = (hhRes.body.data || []).map(h => ({
+        id: h.id, name: h.attributes.name, memberCount: h.attributes.member_count,
+        createdAt: h.attributes.created_at, primaryContactName: h.attributes.primary_contact_name
+      }));
+      // Check-ins: first-time check-ins for City Kids
+      const ckEvent = CHURCH_CONFIG.events.cityKids;
+      const ftRes = await pcoFetch("/check-ins/v2/events/" + ckEvent + "/person_events?filter=first_time&order=-created_at&per_page=10&include=person");
+      out.firstTimeKidsCheckins = { total: ftRes.body.meta && ftRes.body.meta.total_count };
+      const included = ftRes.body.included || [];
+      out.firstTimeKidsCheckins.recent = (ftRes.body.data || []).map(pe => {
+        const personId = pe.relationships && pe.relationships.person && pe.relationships.person.data && pe.relationships.person.data.id;
+        const person = included.find(i => i.id === personId && i.type === "Person");
+        return {
+          id: pe.id, createdAt: pe.attributes.created_at,
+          checkInCount: pe.attributes.check_in_count,
+          personName: person ? (person.attributes.first_name + " " + person.attributes.last_name) : null
+        };
+      });
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(out, null, 2));
+    } catch(e) {
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: e.message, stack: e.stack }));
     }
     return;
   }
