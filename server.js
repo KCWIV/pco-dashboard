@@ -60,6 +60,31 @@ let lifegroupsCache    = null; // { ts, payload } — life groups from PCO Group
 let birthdaysCache     = null; // { ts, payload } — all active people with birthdays
 let progressClients = [];
 let globalTeamNameMap = {};  // persistent: team_id → team_name (rarely changes)
+let teamFirstSeenMap = {};  // persistent: teamName → { personKey → firstSeenLabel }
+                            // Built from 52-week data to accurately detect truly new members
+// Team renames: old name → new name. History from the old team carries over so
+// members aren't falsely flagged as "new" after a rename.
+const TEAM_RENAMES = {
+  "Connect Bar Team": "Live Planted Team",
+};
+// Normalize a team name: trim whitespace, apply renames
+function normalizeTeamName(name) {
+  const trimmed = (name || "").trim();
+  return TEAM_RENAMES[trimmed] || trimmed;
+}
+// Team categories for frontend grouping
+const TEAM_CATEGORIES = {
+  "Worship": ["Worship Band", "Worship Vocals", "Worship Leads", "Production", "Photography Team", "Platform Speakers", "Online Services"],
+  "City Kids": ["City Kids", "Elementary (1st-5th)", "Pre-K & K (3-5)", "Nursery - Infants (0-1)", "Nursery - Toddlers (1-3)", "J High (6th-8th)", "Check In"],
+  "Guest Services": ["First Impressions Team", "Host Team", "Hospitality Team", "Live Planted Team", "Lobby Team", "Next Step Team", "Outdoor + Parking Team", "Parking Team"],
+  "Operations": ["Anointing Team", "Finance Team", "Pastoral Host Team", "Security Team", "Upper Room Team", "Sunday Rally"],
+};
+function getTeamCategory(name) {
+  for (const [cat, teams] of Object.entries(TEAM_CATEGORIES)) {
+    if (teams.indexOf(name) >= 0) return cat;
+  }
+  return "Other";
+}
 let apiCallCount   = 0;     // per-request counter for diagnostics
 let prefetchRunning = false; // guard: prevent concurrent background prefetch runs
 
@@ -275,7 +300,7 @@ async function buildData(weeks) {
       serviceTypes.slice(0, 12).map(st => async () => {
         const teamsRes = await pcoFetch("/services/v2/service_types/"+st.id+"/teams?per_page=100");
         for (const t of (teamsRes.body && teamsRes.body.data) || []) {
-          globalTeamNameMap[t.id] = (t.attributes || {}).name || "Unknown Team";
+          globalTeamNameMap[t.id] = normalizeTeamName((t.attributes || {}).name || "Unknown Team");
         }
       }),
       CONCURRENCY
@@ -604,12 +629,129 @@ async function buildData(weeks) {
   const teamsWeekly = Object.entries(weeklyTeamTotals)
     .map(([name, d]) => ({
       name,
+      category: getTeamCategory(name),
       scheduledByWeek: d.scheduledByWeek,
       confirmedByWeek: d.confirmedByWeek,
       coverageByWeek:  d.scheduledByWeek.map((s, i) => s ? Math.round(d.confirmedByWeek[i] / s * 100) : 0),
     }))
     .filter(t => t.scheduledByWeek.some(s => s > 0))
     .sort((a, b) => b.scheduledByWeek.reduce((s, v) => s + v, 0) - a.scheduledByWeek.reduce((s, v) => s + v, 0));
+
+  // ── 5c. Per-team unique members per week & seasonal growth ────────────────
+  // Track which unique people appeared on each team each week
+  const teamMembersByWeek = {};  // teamName → array of Sets (one per week)
+  const teamMemberFirstSeen = {};  // teamName → { personKey → firstWeekIndex }
+  for (let wi = 0; wi < N; wi++) {
+    for (const [pKey, data] of Object.entries(weeklyPeople[wi])) {
+      for (const s of data.schedules) {
+        const tn = s.team || "Other";
+        if (tn === "Other") continue;
+        if (!teamMembersByWeek[tn]) {
+          teamMembersByWeek[tn] = Array.from({ length: N }, () => new Set());
+          teamMemberFirstSeen[tn] = {};
+        }
+        teamMembersByWeek[tn][wi].add(pKey);
+        if (teamMemberFirstSeen[tn][pKey] === undefined) {
+          teamMemberFirstSeen[tn][pKey] = wi;
+        }
+      }
+    }
+  }
+
+  // Update the persistent teamFirstSeenMap with actual calendar dates.
+  // This map accumulates across all data ranges — the 52-week prefetch populates
+  // the full history, so "new" is based on a rolling year, not just the current range.
+  for (const [tn, fsMap] of Object.entries(teamMemberFirstSeen)) {
+    if (!teamFirstSeenMap[tn]) teamFirstSeenMap[tn] = {};
+    for (const [pKey, firstWi] of Object.entries(fsMap)) {
+      const bucketDate = buckets[firstWi] ? buckets[firstWi].start : null;
+      if (bucketDate) {
+        const dateStr = bucketDate.toISOString().split("T")[0];
+        if (!teamFirstSeenMap[tn][pKey] || dateStr < teamFirstSeenMap[tn][pKey]) {
+          teamFirstSeenMap[tn][pKey] = dateStr;
+        }
+      }
+    }
+  }
+
+  // Build quarterly unique member counts per team for seasonal growth chart
+  // Quarters: split the N weeks into chunks of ~13 weeks
+  const quarterSize = Math.max(4, Math.min(13, Math.ceil(N / 4)));
+  const numQuarters = Math.ceil(N / quarterSize);
+  const quarterLabels = [];
+  for (let q = 0; q < numQuarters; q++) {
+    const startWi = q * quarterSize;
+    const endWi = Math.min(startWi + quarterSize - 1, N - 1);
+    quarterLabels.push(labels[startWi] + "–" + labels[endWi]);
+  }
+
+  const teamSeasonalGrowth = {};  // teamName → { quarterCounts: number[], quarterLabels }
+  for (const [tn, weekSets] of Object.entries(teamMembersByWeek)) {
+    const quarterCounts = [];
+    for (let q = 0; q < numQuarters; q++) {
+      const startWi = q * quarterSize;
+      const endWi = Math.min(startWi + quarterSize, N);
+      const uniqueInQuarter = new Set();
+      for (let wi = startWi; wi < endWi; wi++) {
+        for (const p of weekSets[wi]) uniqueInQuarter.add(p);
+      }
+      quarterCounts.push(uniqueInQuarter.size);
+    }
+    teamSeasonalGrowth[tn] = { quarterCounts };
+  }
+
+  // Per-team unique member count per week
+  const teamUniqueMembersByWeek = {};
+  for (const [tn, weekSets] of Object.entries(teamMembersByWeek)) {
+    teamUniqueMembersByWeek[tn] = weekSets.map(s => s.size);
+  }
+
+  // Per-team member detail: who's on each team with their stats, first-seen, at-risk status
+  // "New" is determined from the persistent 52-week teamFirstSeenMap, not the current range.
+  const now = new Date();
+  const newMemberCutoff = new Date(now);
+  newMemberCutoff.setDate(newMemberCutoff.getDate() - 30); // last 30 days
+  const newMemberCutoffStr = newMemberCutoff.toISOString().split("T")[0];
+
+  const teamMemberDetails = {};
+  for (const [tn, firstSeenMap] of Object.entries(teamMemberFirstSeen)) {
+    teamMemberDetails[tn] = [];
+    for (const [pKey, firstWi] of Object.entries(firstSeenMap)) {
+      const profile = volunteerProfileMap[pKey];
+      if (!profile) continue;
+      const name = profile.name;
+      // Count confirmed serves on THIS team specifically
+      let teamConfirmed = 0, teamScheduled = 0, lastTeamServeWi = -1;
+      for (let wi = 0; wi < N; wi++) {
+        if (teamMembersByWeek[tn][wi].has(pKey)) {
+          const weekData = weeklyPeople[wi][pKey];
+          if (weekData) {
+            for (const s of weekData.schedules) {
+              if (s.team === tn) {
+                teamScheduled++;
+                if (s.status === "C") { teamConfirmed++; lastTeamServeWi = wi; }
+              }
+            }
+          }
+        }
+      }
+      // Use persistent first-seen date from 52-week history for accurate "new" detection
+      const historicalFirstSeen = (teamFirstSeenMap[tn] && teamFirstSeenMap[tn][pKey]) || null;
+      const isNew = historicalFirstSeen ? historicalFirstSeen >= newMemberCutoffStr : false;
+      const isInactive = lastTeamServeWi >= 0 && lastTeamServeWi < N - 4 && teamConfirmed >= 2;
+      const otherTeams = Array.from(profile.teams).filter(t => t !== tn);
+      const teamRate = teamScheduled > 0 ? Math.round(teamConfirmed / teamScheduled * 100) : 0;
+      const firstSeenLabel = historicalFirstSeen || (labels[firstWi] || null);
+      teamMemberDetails[tn].push({
+        name, firstWi, firstSeenLabel, isNew, isInactive,
+        teamConfirmed, teamScheduled, teamRate,
+        lastTeamServeWi,
+        otherTeams,
+        isMultiTeam: otherTeams.length > 0,
+      });
+    }
+    teamMemberDetails[tn].sort((a, b) => b.teamConfirmed - a.teamConfirmed);
+  }
 
   // ── 6. Attendance ───────────────────────────────────────────────────────────
   // Discovered from debug-checkins output:
@@ -980,7 +1122,7 @@ async function buildData(weeks) {
   const elapsed = ((Date.now() - buildStart) / 1000).toFixed(1);
   console.log("✅ buildData(weeks=" + weeks + ") completed in " + elapsed + "s with " + apiCallCount + " API calls");
   broadcast({ step: "Done! (" + elapsed + "s, " + apiCallCount + " API calls)", pct: 100 });
-  return { labels, grouping, weeks, attendance, attendanceByService, kidsAttendance, decisions, sundayBreakdown, scheduled, confirmed, declined, blocked, firstTimers, firstTimerNames, teams, teamsWeekly, weeklyMultiServers, uniqueVolunteers, kidsCheckinCounts, kidsCheckinByService, kidsRoomBreakdown, weeklyMultiServiceKids, uniqueKids, volunteerProfiles, atRiskVolunteers, newFamiliesByWeek, newFamiliesCount, fetchedAt: new Date().toISOString() };
+  return { labels, grouping, weeks, attendance, attendanceByService, kidsAttendance, decisions, sundayBreakdown, scheduled, confirmed, declined, blocked, firstTimers, firstTimerNames, teams, teamsWeekly, weeklyMultiServers, uniqueVolunteers, kidsCheckinCounts, kidsCheckinByService, kidsRoomBreakdown, weeklyMultiServiceKids, uniqueKids, volunteerProfiles, atRiskVolunteers, newFamiliesByWeek, newFamiliesCount, teamSeasonalGrowth, quarterLabels, teamUniqueMembersByWeek, teamMemberDetails, fetchedAt: new Date().toISOString() };
 }
 
 // ── /debug ────────────────────────────────────────────────────────────────────
@@ -2034,15 +2176,185 @@ const server = http.createServer(async (req, res) => {
         nextUrl = nxt ? (new URL(nxt)).pathname + (new URL(nxt)).search : null;
       }
 
+      // ── Season detection ──────────────────────────────────────────────────
+      // Seasons follow 3-month cycles. Detect from group name suffixes like
+      // "| April-June" or "| January-March", and from createdAt date clusters.
+      // Season boundaries: Jan-Mar, Apr-Jun, Jul-Sep, Oct-Dec
+      const seasonMonthRanges = [
+        { label: "January–March",  months: [1,2,3],    namePatterns: [/\bjan(uary)?[\s\-–]+mar(ch)?\b/i, /\bjanuary[\s\-–]+march\b/i] },
+        { label: "April–June",     months: [4,5,6],    namePatterns: [/\bapr(il)?[\s\-–]+jun(e)?\b/i, /\bapril[\s\-–]+june\b/i] },
+        { label: "July–September", months: [7,8,9],    namePatterns: [/\bjul(y)?[\s\-–]+sep(tember)?\b/i] },
+        { label: "October–December", months: [10,11,12], namePatterns: [/\boct(ober)?[\s\-–]+dec(ember)?\b/i] },
+      ];
+
+      function detectSeason(group) {
+        const name = group.name || "";
+        // Check for explicit season suffix in name (e.g. "| April-June")
+        for (const sr of seasonMonthRanges) {
+          for (const pat of sr.namePatterns) {
+            if (pat.test(name)) return sr.label;
+          }
+        }
+        // Also check schedule field for season indicators (e.g. "Monday Evenings | January-March")
+        const sched = group.schedule || "";
+        for (const sr of seasonMonthRanges) {
+          for (const pat of sr.namePatterns) {
+            if (pat.test(sched)) return sr.label;
+          }
+        }
+        // Fall back to createdAt — groups created Mar 2026+ with no season tag are likely
+        // April-June. Groups created Nov/Dec 2025 or Jan 2026 are January-March.
+        // Groups created before the current cycle default to January-March (most recent full season).
+        if (group.createdAt) {
+          const parts = group.createdAt.split("-");
+          const y = parseInt(parts[0]);
+          const m = parseInt(parts[1]);
+          // Only assign to April-June if created in March 2026 or later (new season prep)
+          if (y >= 2026 && m >= 3) return "April–June";
+          // Nov/Dec or Jan/Feb creation → January-March
+          if (m >= 11 || m <= 2) return "January–March";
+        }
+        return "January–March"; // default — most recent full season
+      }
+
+      // Tag each group with its season and a clean display name (strip season suffix)
+      for (const g of groups) {
+        g.season = detectSeason(g);
+        g.displayName = g.name.replace(/\s*\|\s*(january|april|july|october)[\s\-–]+(march|june|september|december)\s*/i, "").trim();
+      }
+
       // Sort by member count descending
       groups.sort((a, b) => b.members - a.members);
 
-      // Stats
-      const totalEnrolled   = groups.reduce((s, g) => s + g.members, 0);
-      const avgSize         = groups.length ? Math.round(totalEnrolled / groups.length) : 0;
-      const healthyGroups   = groups.filter(g => g.members >= 5 && g.members <= 25).length;
-      const largeGroups     = groups.filter(g => g.members > 25).length;
-      const smallGroups     = groups.filter(g => g.members < 5).length;
+      // Determine which seasons exist and which is current
+      const now = new Date();
+      const currentMonth = now.getMonth() + 1; // 1-based
+      const currentSeasonLabel = currentMonth <= 3 ? "January–March" :
+        currentMonth <= 6 ? "April–June" :
+        currentMonth <= 9 ? "July–September" : "October–December";
+      const allSeasons = [...new Set(groups.map(g => g.season))];
+      // Order seasons chronologically
+      const seasonOrder = ["January–March", "April–June", "July–September", "October–December"];
+      allSeasons.sort((a, b) => seasonOrder.indexOf(a) - seasonOrder.indexOf(b));
+
+      // ── Fetch member person IDs per group ──────────────────────────────────
+      const groupPersonIds = {};  // groupId → Set of person IDs
+      const personNameMap = {};    // personId → name
+      await pLimit(
+        groups.map(g => async () => {
+          const pids = new Set();
+          let memUrl = "/groups/v2/groups/" + g.id + "/memberships?per_page=100&include=person&fields[Person]=first_name,last_name";
+          while (memUrl) {
+            const r = await pcoFetch(memUrl);
+            if (r.status !== 200) break;
+            const pMap = {};
+            for (const inc of (r.body.included || [])) {
+              if (inc.type === "Person") pMap[inc.id] = inc.attributes;
+            }
+            for (const m of (r.body.data || [])) {
+              const pid = m.relationships && m.relationships.person && m.relationships.person.data && m.relationships.person.data.id;
+              if (pid) {
+                pids.add(pid);
+                if (!personNameMap[pid]) {
+                  const pa = pMap[pid] || {};
+                  personNameMap[pid] = ((pa.first_name || "") + " " + (pa.last_name || "")).trim();
+                }
+              }
+            }
+            const nxt = r.body.links && r.body.links.next;
+            memUrl = nxt ? (new URL(nxt)).pathname + (new URL(nxt)).search : null;
+          }
+          groupPersonIds[g.id] = pids;
+        }),
+        6
+      );
+
+      // ── Per-season stats ───────────────────────────────────────────────────
+      const seasonStats = {};
+      const seasonPersonIds = {};  // seasonLabel → Set of person IDs
+      for (const sl of allSeasons) {
+        const sGroups = groups.filter(g => g.season === sl);
+        const personIds = new Set();
+        for (const g of sGroups) {
+          for (const pid of (groupPersonIds[g.id] || [])) personIds.add(pid);
+        }
+        seasonPersonIds[sl] = personIds;
+
+        // Multi-group within this season
+        const personGroupsInSeason = {};
+        for (const g of sGroups) {
+          for (const pid of (groupPersonIds[g.id] || [])) {
+            if (!personGroupsInSeason[pid]) personGroupsInSeason[pid] = [];
+            personGroupsInSeason[pid].push(g.displayName || g.name);
+          }
+        }
+        const multiGroup = Object.entries(personGroupsInSeason)
+          .filter(([, gs]) => gs.length >= 2)
+          .map(([pid, gs]) => ({ name: personNameMap[pid] || "Unknown", groups: gs }))
+          .sort((a, b) => b.groups.length - a.groups.length || a.name.localeCompare(b.name));
+
+        const totalEnrolled = sGroups.reduce((s, g) => s + g.members, 0);
+        seasonStats[sl] = {
+          total: sGroups.length,
+          totalEnrolled,
+          uniqueIndividuals: personIds.size,
+          avgSize: sGroups.length ? Math.round(totalEnrolled / sGroups.length) : 0,
+          healthyGroups: sGroups.filter(g => g.members >= 5 && g.members <= 25).length,
+          largeGroups: sGroups.filter(g => g.members > 25).length,
+          smallGroups: sGroups.filter(g => g.members < 5).length,
+          multiGroupPeople: multiGroup,
+        };
+      }
+
+      // ── Season-over-season retention ───────────────────────────────────────
+      // Compare consecutive seasons: who returned, who's new, who left
+      const seasonTransitions = [];
+      for (let si = 1; si < allSeasons.length; si++) {
+        const prevSeason = allSeasons[si - 1];
+        const currSeason = allSeasons[si];
+        const prevIds = seasonPersonIds[prevSeason] || new Set();
+        const currIds = seasonPersonIds[currSeason] || new Set();
+        const returning = new Set([...currIds].filter(id => prevIds.has(id)));
+        const newPeople = new Set([...currIds].filter(id => !prevIds.has(id)));
+        const didNotReturn = new Set([...prevIds].filter(id => !currIds.has(id)));
+        seasonTransitions.push({
+          from: prevSeason,
+          to: currSeason,
+          returning: returning.size,
+          returningNames: [...returning].map(id => personNameMap[id] || "Unknown").sort(),
+          new: newPeople.size,
+          newNames: [...newPeople].map(id => personNameMap[id] || "Unknown").sort(),
+          didNotReturn: didNotReturn.size,
+          didNotReturnNames: [...didNotReturn].map(id => personNameMap[id] || "Unknown").sort(),
+          retentionRate: prevIds.size > 0 ? Math.round(returning.size / prevIds.size * 100) : 0,
+        });
+      }
+
+      // ── Global stats (all seasons combined, deduplicated) ──────────────────
+      const allPersonIds = new Set();
+      for (const pids of Object.values(groupPersonIds)) {
+        for (const pid of pids) allPersonIds.add(pid);
+      }
+      const totalEnrolled = groups.reduce((s, g) => s + g.members, 0);
+      const uniqueIndividuals = allPersonIds.size;
+
+      // Global multi-group (across all seasons)
+      const globalPersonGroups = {};
+      for (const g of groups) {
+        for (const pid of (groupPersonIds[g.id] || [])) {
+          if (!globalPersonGroups[pid]) globalPersonGroups[pid] = [];
+          globalPersonGroups[pid].push(g.displayName || g.name);
+        }
+      }
+      const multiGroupPeople = Object.entries(globalPersonGroups)
+        .filter(([, gs]) => gs.length >= 2)
+        .map(([pid, gs]) => ({ name: personNameMap[pid] || "Unknown", groups: gs }))
+        .sort((a, b) => b.groups.length - a.groups.length || a.name.localeCompare(b.name));
+
+      const avgSize = groups.length ? Math.round(totalEnrolled / groups.length) : 0;
+      const healthyGroups = groups.filter(g => g.members >= 5 && g.members <= 25).length;
+      const largeGroups = groups.filter(g => g.members > 25).length;
+      const smallGroups = groups.filter(g => g.members < 5).length;
 
       // Day-of-week breakdown from schedule strings (with group names per day)
       const dayGroupsMap = {};
@@ -2057,9 +2369,14 @@ const server = http.createServer(async (req, res) => {
       }
       const meetingDays = days.filter(d => dayGroupsMap[d]).map(d => ({ day: d, count: dayGroupsMap[d].length, groups: dayGroupsMap[d] }));
 
-      const payload = { groups, stats: { total: groups.length, totalEnrolled, avgSize, healthyGroups, largeGroups, smallGroups }, meetingDays };
+      const payload = {
+        groups,
+        stats: { total: groups.length, totalEnrolled, uniqueIndividuals, avgSize, healthyGroups, largeGroups, smallGroups },
+        meetingDays, multiGroupPeople,
+        seasons: allSeasons, currentSeason: currentSeasonLabel, seasonStats, seasonTransitions,
+      };
       lifegroupsCache = { ts: Date.now(), payload };
-      console.log("✅ Life groups data built — " + groups.length + " groups, " + totalEnrolled + " enrolled");
+      console.log("✅ Life groups data built — " + groups.length + " groups, " + uniqueIndividuals + " unique individuals across " + allSeasons.length + " seasons");
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify(payload));
     } catch(e) {

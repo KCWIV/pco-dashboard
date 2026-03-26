@@ -95,12 +95,35 @@ tr+tr td{border-top:1px solid var(--border);}
 /* ── Pill ───────────────────────────────────────────────────────────────── */
 .pill{border-radius:99px;padding:3px 10px;font-size:11px;font-weight:600;font-family:'DM Mono',monospace;display:inline-block;}
 
-/* ── Team cards ─────────────────────────────────────────────────────────── */
+/* ── Team cards (legacy) ────────────────────────────────────────────────── */
 .team-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:14px;}
 .team-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:18px 20px;border-left:3px solid;box-shadow:0 1px 3px rgba(0,0,0,.04);transition:box-shadow .2s,transform .15s;}
 .team-card:hover{box-shadow:0 4px 12px rgba(0,0,0,.08);transform:translateY(-1px);}
 .coverage-bar-bg{height:5px;background:var(--surface);border-radius:99px;overflow:hidden;margin-top:14px;border:1px solid var(--border);}
 .coverage-bar-fill{height:100%;border-radius:99px;transition:width .6s cubic-bezier(.4,0,.2,1);}
+
+/* ── Teams table ───────────────────────────────────────────────────────── */
+.teams-table{width:100%;border-collapse:separate;border-spacing:0;font-size:14px;}
+.teams-table th{text-align:left;color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.07em;padding:10px 12px;border-bottom:2px solid var(--border);cursor:pointer;user-select:none;white-space:nowrap;position:sticky;top:0;background:var(--card);z-index:2;}
+.teams-table th:hover{color:var(--brand);}
+.teams-table th .sort-arrow{font-size:9px;margin-left:4px;opacity:.5;}
+.teams-table th.sorted .sort-arrow{opacity:1;color:var(--brand);}
+.teams-table td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:middle;}
+.teams-table tr.team-row{cursor:pointer;transition:background .12s;}
+.teams-table tr.team-row:hover td{background:rgba(90,174,224,.04);}
+.teams-table tr.team-row.expanded td{background:var(--brand-light);border-bottom-color:var(--brand-light);}
+.team-expand-row td{padding:0;background:var(--surface);border-bottom:1px solid var(--border);}
+.team-expand-body{padding:16px 20px;animation:expandIn .2s ease-out;}
+@keyframes expandIn{from{opacity:0;max-height:0;}to{opacity:1;max-height:2000px;}}
+.team-member-row{display:flex;align-items:center;gap:12px;padding:7px 10px;border-radius:8px;transition:background .1s;}
+.team-member-row:hover{background:rgba(90,174,224,.06);}
+.team-badge{display:inline-block;padding:1px 7px;border-radius:99px;font-size:10px;font-weight:600;margin-left:6px;}
+.team-badge-new{background:#dcfce7;color:#16a34a;}
+.team-badge-inactive{background:#fef3c7;color:#d97706;}
+.team-badge-multi{background:#dbeafe;color:#3b82f6;}
+.health-dot{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:6px;flex-shrink:0;}
+.teams-search{width:100%;max-width:300px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:8px 14px;color:var(--text);font-size:13px;font-family:'DM Sans',sans-serif;outline:none;transition:border-color .2s;}
+.teams-search:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(90,174,224,.15);}
 
 /* ── Week selector ──────────────────────────────────────────────────────── */
 .week-tabs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;}
@@ -390,6 +413,8 @@ var $=function(id){return document.getElementById(id);};
 var fmt=function(n){return n==null?'—':Number(n).toLocaleString();};
 // HTML escape to prevent XSS from PCO data (volunteer names, team names, etc.)
 var esc=function(s){if(!s)return'';var d=document.createElement('div');d.appendChild(document.createTextNode(s));return d.innerHTML;};
+// Escape a string for safe use inside inline JS onclick='...' attributes (handles quotes, backslashes, etc.)
+var jsesc=function(s){if(!s)return'';return s.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');};
 var pct=function(a,b){return b?Math.round(a/b*100):0;};
 // Participation rate: % of weeks where they confirmed at least once.
 // Fairer for multi-team volunteers — showing up once in a week counts as 100% for that week.
@@ -561,6 +586,359 @@ async function loadBirthdaysData(force){
   finally{bdLoading=false;}
   if(activeTab==='birthdays')renderBirthdaysTab();
 }
+// ── Teams tab ─────────────────────────────────────────────────────────────────
+var teamsSortCol='health';
+var teamsSortAsc=false;
+var teamsExpandedRow=null;
+var teamsSearchQuery='';
+var teamsViewMode='category'; // 'category' or 'table'
+var teamsExpandedCats={}; // category → true/false
+var teamsShowInactive=false; // show teams with 0 current members
+
+function teamHealthScore(t){
+  var coverageScore=Math.min(t.coverage,100);
+  var uniqueByWeek=D.teamUniqueMembersByWeek&&D.teamUniqueMembersByWeek[t.name]||[];
+  var recentHalf=uniqueByWeek.slice(Math.floor(uniqueByWeek.length/2));
+  var earlyHalf=uniqueByWeek.slice(0,Math.floor(uniqueByWeek.length/2));
+  var recentAvg=recentHalf.length?recentHalf.reduce(function(s,v){return s+v;},0)/recentHalf.length:0;
+  var earlyAvg=earlyHalf.length?earlyHalf.reduce(function(s,v){return s+v;},0)/earlyHalf.length:0;
+  var trendScore=earlyAvg>0?Math.min(100,Math.round((recentAvg/earlyAvg)*70+30)):50;
+  var details=D.teamMemberDetails&&D.teamMemberDetails[t.name]||[];
+  var engSum=0;details.forEach(function(m){engSum+=m.teamRate;});
+  var engScore=details.length?Math.round(engSum/details.length):0;
+  var newCount=details.filter(function(m){return m.isNew;}).length;
+  var newScore=details.length?Math.min(100,Math.round((newCount/details.length)*200+20)):20;
+  var health=Math.round(coverageScore*0.4+trendScore*0.25+engScore*0.2+newScore*0.15);
+  return Math.max(0,Math.min(100,health));
+}
+function healthColor(h){return h>=75?'var(--green)':h>=50?'var(--amber)':'var(--red)';}
+function healthLabel(h){return h>=75?'Healthy':h>=50?'Fair':'Needs Attention';}
+
+function renderTeamsTab(){
+  if(!D)return;
+  var tw=D.teamsWeekly||[];
+
+  // Build team objects
+  var allTeams=tw.map(function(t){
+    var totalSched=t.scheduledByWeek.reduce(function(s,v){return s+v;},0);
+    var totalConf=t.confirmedByWeek.reduce(function(s,v){return s+v;},0);
+    var avgCov=totalSched?Math.round(totalConf/totalSched*100):0;
+    var memberCount=(D.volunteerProfiles||[]).filter(function(v){return v.teams.indexOf(t.name)>=0;}).length;
+    var details=D.teamMemberDetails&&D.teamMemberDetails[t.name]||[];
+    var newMembers=details.filter(function(m){return m.isNew;}).length;
+    var inactiveMembers=details.filter(function(m){return m.isInactive;}).length;
+    var multiTeamMembers=details.filter(function(m){return m.isMultiTeam;}).length;
+    var sg=D.teamSeasonalGrowth&&D.teamSeasonalGrowth[t.name];
+    var qc=sg&&sg.quarterCounts||[];
+    var lastQ=qc.length?qc[qc.length-1]:0;
+    var prevQ=qc.length>=2?qc[qc.length-2]:0;
+    var seasonDelta=lastQ-prevQ;
+    return {
+      name:t.name, category:t.category||'Other', scheduled:totalSched, confirmed:totalConf,
+      coverage:avgCov, members:memberCount,
+      newMembers:newMembers, inactiveMembers:inactiveMembers, multiTeamMembers:multiTeamMembers,
+      scheduledByWeek:t.scheduledByWeek, confirmedByWeek:t.confirmedByWeek, coverageByWeek:t.coverageByWeek,
+      quarterCounts:qc, seasonDelta:seasonDelta, lastQ:lastQ
+    };
+  }).filter(function(t){return t.scheduled>0;});
+
+  allTeams.forEach(function(t){t.health=teamHealthScore(t);});
+
+  // Filter by search
+  var filtered=allTeams;
+  if(teamsSearchQuery){
+    var q=teamsSearchQuery.toLowerCase();
+    filtered=allTeams.filter(function(t){return t.name.toLowerCase().indexOf(q)>=0||t.category.toLowerCase().indexOf(q)>=0;});
+  }
+
+  // Sort
+  var col=teamsSortCol;
+  filtered.sort(function(a,b){
+    var va,vb;
+    if(col==='name'){va=a.name.toLowerCase();vb=b.name.toLowerCase();return teamsSortAsc?va.localeCompare(vb):vb.localeCompare(va);}
+    if(col==='members'){va=a.members;vb=b.members;}
+    else if(col==='coverage'){va=a.coverage;vb=b.coverage;}
+    else if(col==='health'){va=a.health;vb=b.health;}
+    else if(col==='growth'){va=a.seasonDelta;vb=b.seasonDelta;}
+    else{va=a.health;vb=b.health;}
+    return teamsSortAsc?va-vb:vb-va;
+  });
+
+  // Summary stats
+  var totalMembers=allTeams.reduce(function(s,t){return s+t.members;},0);
+  var avgHealth=allTeams.length?Math.round(allTeams.reduce(function(s,t){return s+t.health;},0)/allTeams.length):0;
+  var avgCoverage=allTeams.length?Math.round(allTeams.reduce(function(s,t){return s+t.coverage;},0)/allTeams.length):0;
+  var totalNew=allTeams.reduce(function(s,t){return s+t.newMembers;},0);
+  var totalInactive=allTeams.reduce(function(s,t){return s+t.inactiveMembers;},0);
+  var healthy=allTeams.filter(function(t){return t.health>=75;}).length;
+  var growing=allTeams.filter(function(t){return t.seasonDelta>0;}).length;
+  var shrinking=allTeams.filter(function(t){return t.seasonDelta<0;}).length;
+
+  // Category breakdown cards
+  var catOrder=['Worship','City Kids','Guest Services','Operations','Other'];
+  var catIcons={'Worship':'♪','City Kids':'★','Guest Services':'◈','Operations':'⚙','Other':'●'};
+  var catColors={'Worship':'var(--purple)','City Kids':'var(--amber)','Guest Services':'var(--teal)','Operations':'var(--accent)','Other':'var(--muted)'};
+  var catData={};
+  allTeams.forEach(function(t){
+    if(!catData[t.category])catData[t.category]={teams:[],members:0,avgHealth:0,growing:0,shrinking:0};
+    catData[t.category].teams.push(t);
+    catData[t.category].members+=t.members;
+    if(t.seasonDelta>0)catData[t.category].growing++;
+    if(t.seasonDelta<0)catData[t.category].shrinking++;
+  });
+  catOrder.forEach(function(cat){
+    if(!catData[cat])return;
+    var cd=catData[cat];
+    cd.avgHealth=cd.teams.length?Math.round(cd.teams.reduce(function(s,t){return s+t.health;},0)/cd.teams.length):0;
+  });
+
+  var catCardsHtml='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-bottom:16px">';
+  catOrder.forEach(function(cat){
+    if(!catData[cat])return;
+    var cd=catData[cat];
+    var cc=catColors[cat]||'var(--muted)';
+    var hc=healthColor(cd.avgHealth);
+    catCardsHtml+='<div class="panel" style="padding:14px 16px;cursor:pointer;border-left:3px solid '+cc+'" onclick="teamsSearchQuery=\''+cat+'\';renderTeamsTab();var si=document.getElementById(\'teams-search-input\');if(si){si.focus();}">'+
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'+
+        '<span style="font-size:16px">'+catIcons[cat]+'</span>'+
+        '<span style="font-weight:700;font-size:14px;color:var(--text)">'+esc(cat)+'</span>'+
+      '</div>'+
+      '<div style="display:flex;gap:12px;font-size:12px;color:var(--muted)">'+
+        '<span><strong style="color:var(--text)">'+cd.teams.length+'</strong> teams</span>'+
+        '<span><strong style="color:var(--text)">'+cd.members+'</strong> people</span>'+
+      '</div>'+
+      '<div style="margin-top:8px;display:flex;gap:8px;font-size:11px">'+
+        '<span style="color:'+hc+'">Health: '+cd.avgHealth+'</span>'+
+        (cd.growing?'<span style="color:var(--green)">↑'+cd.growing+'</span>':'')+
+        (cd.shrinking?'<span style="color:var(--red)">↓'+cd.shrinking+'</span>':'')+
+      '</div>'+
+    '</div>';
+  });
+  catCardsHtml+='</div>';
+
+  // Sort header helper
+  function thSort(label,colName,align){
+    var cls=teamsSortCol===colName?' class="sorted"':'';
+    var arrow=teamsSortCol===colName?(teamsSortAsc?' ▲':' ▼'):'';
+    var style=align==='right'?' style="text-align:right"':'';
+    return'<th'+cls+style+' onclick="teamsSortCol=\''+colName+'\';teamsSortAsc=teamsSortCol===\''+colName+'\'?!teamsSortAsc:false;renderTeamsTab()">'+label+'<span class="sort-arrow">'+arrow+'</span></th>';
+  }
+
+  // Season growth columns from quarterLabels
+  var ql=D.quarterLabels||[];
+
+  // Build table rows with season-by-season actual numbers
+  var rows='';
+  filtered.forEach(function(t){
+    var hc=healthColor(t.health);
+    var isExpanded=teamsExpandedRow===t.name;
+    var catColor=catColors[t.category]||'var(--muted)';
+
+    // Season columns: actual numbers per quarter
+    var seasonCells='';
+    if(ql.length>=2){
+      t.quarterCounts.forEach(function(c,qi){
+        var prev=qi>0?t.quarterCounts[qi-1]:c;
+        var d=c-prev;
+        var dc=qi===0?'var(--text)':d>0?'var(--green)':d<0?'var(--red)':'var(--muted)';
+        var dStr=qi===0?'':(d>0?' +'+d:d<0?' '+d:'');
+        seasonCells+='<td style="text-align:center;font-family:\'DM Mono\',monospace;font-size:13px">'+
+          '<span style="font-weight:600;color:'+dc+'">'+c+'</span>'+
+          (dStr?'<span style="font-size:10px;color:'+dc+'">'+dStr+'</span>':'')+
+        '</td>';
+      });
+    }
+
+    // Net change column
+    var netDelta=t.seasonDelta;
+    var netColor=netDelta>0?'var(--green)':netDelta<0?'var(--red)':'var(--muted)';
+    var netStr=netDelta>0?'+'+netDelta:netDelta===0?'—':''+netDelta;
+
+    rows+='<tr class="team-row'+(isExpanded?' expanded':'')+'" onclick="teamsExpandedRow=teamsExpandedRow===\''+jsesc(t.name)+'\' ?null:\''+jsesc(t.name)+'\';renderTeamsTab()">'+
+      '<td><div style="display:flex;align-items:center;gap:10px">'+
+        '<div style="width:4px;height:28px;border-radius:2px;background:'+catColor+';flex-shrink:0"></div>'+
+        '<span class="health-dot" style="background:'+hc+'"></span>'+
+        '<div><div style="font-weight:600;font-size:14px">'+esc(t.name)+'</div>'+
+        '<div style="font-size:11px;color:var(--muted)">'+esc(t.category)+' · '+healthLabel(t.health)+'</div></div>'+
+      '</div></td>'+
+      '<td style="text-align:right"><span style="font-weight:700;font-family:\'DM Mono\',monospace;font-size:16px;color:'+hc+'">'+t.health+'</span><span style="font-size:11px;color:var(--muted)"> /100</span></td>'+
+      '<td style="text-align:right"><span style="font-weight:600;font-family:\'DM Mono\',monospace">'+t.members+'</span></td>'+
+      '<td style="text-align:right">'+pillHTML(t.coverage)+'</td>'+
+      seasonCells+
+      '<td style="text-align:center"><span style="font-weight:700;font-family:\'DM Mono\',monospace;font-size:14px;color:'+netColor+'">'+netStr+'</span></td>'+
+      '<td style="text-align:right;font-size:16px;color:var(--muted2)">'+(isExpanded?'▾':'▸')+'</td>'+
+    '</tr>';
+
+    // Expanded roster
+    if(isExpanded){
+      var details=D.teamMemberDetails&&D.teamMemberDetails[t.name]||[];
+      var memberHtml='';
+      if(details.length===0){
+        memberHtml='<div style="color:var(--muted);font-size:13px;padding:12px 0;text-align:center">No member data available</div>';
+      } else {
+        // Sort roster: active first, then by serve count
+        var sorted=details.slice().sort(function(a,b){
+          if(a.isInactive!==b.isInactive) return a.isInactive?1:-1;
+          return b.teamConfirmed-a.teamConfirmed;
+        });
+        sorted.forEach(function(m){
+          var color=avatarColor(m.name);
+          var rc=m.teamRate>=80?'var(--green)':m.teamRate>=60?'var(--amber)':'var(--red)';
+          var lastSeen=m.lastTeamServeWi>=0&&D.labels[m.lastTeamServeWi]?D.labels[m.lastTeamServeWi]:'—';
+          var badges='';
+          if(m.isNew)badges+='<span class="team-badge team-badge-new" title="First scheduled: '+(m.firstSeenLabel||'recently')+'">New</span>';
+          if(m.isInactive)badges+='<span class="team-badge team-badge-inactive" title="Last served: '+esc(lastSeen)+'">Inactive</span>';
+          if(m.isMultiTeam)badges+='<span class="team-badge team-badge-multi" title="Also on: '+esc(m.otherTeams.join(', '))+'">Multi-team</span>';
+          memberHtml+='<div class="team-member-row" style="'+(m.isInactive?'opacity:.55;':'')+'">'+
+            '<div class="vol-avatar" style="background:'+color+'18;color:'+color+';border:1px solid '+color+'33;width:32px;height:32px;font-size:11px">'+initials(m.name)+'</div>'+
+            '<div style="flex:1;min-width:0">'+
+              '<div style="font-weight:600;font-size:13px">'+esc(m.name)+' '+badges+'</div>'+
+              '<div style="font-size:11px;color:var(--muted)">'+
+                m.teamConfirmed+'/'+m.teamScheduled+' serves · Last: '+esc(lastSeen)+
+                (m.isMultiTeam?' · Also: '+esc(m.otherTeams.slice(0,2).join(', ')):'')+
+              '</div>'+
+            '</div>'+
+            '<span class="pill" style="background:'+rc+'15;color:'+rc+';border:1px solid '+rc+'30;font-size:10px">'+m.teamRate+'%</span>'+
+          '</div>';
+        });
+      }
+
+      var expandCols=5+(ql.length>=2?ql.length+1:0);
+      rows+='<tr class="team-expand-row"><td colspan="'+expandCols+'"><div class="team-expand-body">'+
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">'+
+          '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--muted2)">Team Roster — '+details.length+' Members</div>'+
+          '<div style="display:flex;gap:12px;font-size:11px;color:var(--muted)">'+
+            (t.newMembers?'<span style="color:var(--green)">● '+t.newMembers+' New</span>':'')+
+            (t.inactiveMembers?'<span style="color:var(--amber)">● '+t.inactiveMembers+' Inactive</span>':'')+
+            (t.multiTeamMembers?'<span style="color:var(--accent)">● '+t.multiTeamMembers+' Multi-team</span>':'')+
+          '</div>'+
+        '</div>'+
+        memberHtml+
+      '</div></td></tr>';
+    }
+  });
+
+  // Season growth chart — all teams with real numbers
+  var growthChartHtml='';
+  if(ql.length>=2){
+    var activeTeams=allTeams.filter(function(t){return t.lastQ>0||t.quarterCounts.some(function(c){return c>0;});});
+    activeTeams.sort(function(a,b){return b.lastQ-a.lastQ;});
+
+    var maxQ=Math.max.apply(null,activeTeams.map(function(t){return Math.max.apply(null,t.quarterCounts)||0;}))||1;
+
+    var chartRows='';
+    activeTeams.forEach(function(t){
+      var qc=t.quarterCounts;
+      if(!qc.length)return;
+      var catColor=catColors[t.category]||'var(--muted)';
+      var delta=qc.length>=2?qc[qc.length-1]-qc[qc.length-2]:0;
+      var deltaColor=delta>0?'var(--green)':delta<0?'var(--red)':'var(--muted)';
+      var deltaLabel=delta>0?'+'+delta:delta===0?'—':''+delta;
+
+      chartRows+='<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)">'+
+        '<div style="width:4px;height:20px;border-radius:2px;background:'+catColor+';flex-shrink:0"></div>'+
+        '<div style="width:160px;font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="'+esc(t.name)+'">'+esc(t.name)+'</div>'+
+        '<div style="flex:1;display:flex;align-items:flex-end;gap:3px;height:36px">';
+      qc.forEach(function(c,qi){
+        var barH=maxQ?Math.max(2,Math.round(c/maxQ*32)):2;
+        var isLast=qi===qc.length-1;
+        var barColor=isLast?(delta>0?'var(--green)':delta<0?'var(--red)':'var(--accent)'):'var(--accent)';
+        var barOpacity=isLast?1:0.35;
+        chartRows+='<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:1px">'+
+          '<div style="font-size:10px;color:'+(isLast?'var(--text)':'var(--muted)')+';font-family:\'DM Mono\',monospace;font-weight:'+(isLast?'700':'400')+'">'+c+'</div>'+
+          '<div style="width:100%;height:'+barH+'px;background:'+barColor+';border-radius:2px;opacity:'+barOpacity+'"></div>'+
+        '</div>';
+      });
+      chartRows+='</div>'+
+        '<div style="width:50px;text-align:right;font-size:12px;font-weight:700;font-family:\'DM Mono\',monospace;color:'+deltaColor+'">'+deltaLabel+'</div>'+
+      '</div>';
+    });
+
+    // Quarter labels row
+    var qLabelsRow='<div style="display:flex;align-items:center;gap:8px;padding:4px 0;margin-bottom:4px">'+
+      '<div style="width:4px"></div>'+
+      '<div style="width:160px;font-size:10px;font-weight:600;color:var(--muted2)">Team</div>'+
+      '<div style="flex:1;display:flex;gap:3px">';
+    ql.forEach(function(l){
+      qLabelsRow+='<div style="flex:1;text-align:center;font-size:10px;color:var(--muted2)">'+esc(l)+'</div>';
+    });
+    qLabelsRow+='</div><div style="width:50px;text-align:right;font-size:10px;color:var(--muted2);font-weight:600">±</div></div>';
+
+    growthChartHtml='<div class="panel" style="margin-bottom:14px">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">'+
+        '<div><div class="panel-title" style="--panel-dot:var(--accent)">Season-over-Season Growth</div>'+
+        '<div class="panel-sub">Unique volunteers per team by season. Sorted by current season size.</div></div>'+
+      '</div>'+
+      qLabelsRow+chartRows+
+    '</div>';
+  }
+
+  // Needs Attention panel — teams with health < 50 or shrinking significantly
+  var attentionTeams=allTeams.filter(function(t){return t.health<50||t.seasonDelta<=-3||t.inactiveMembers>=3;});
+  var attentionHtml='';
+  if(attentionTeams.length>0){
+    attentionTeams.sort(function(a,b){return a.health-b.health;});
+    var attRows=attentionTeams.map(function(t){
+      var reasons=[];
+      if(t.health<50) reasons.push('Health: '+t.health+'/100');
+      if(t.seasonDelta<=-3) reasons.push('Lost '+Math.abs(t.seasonDelta)+' members');
+      if(t.inactiveMembers>=3) reasons.push(t.inactiveMembers+' inactive');
+      return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">'+
+        '<span class="health-dot" style="background:'+healthColor(t.health)+'"></span>'+
+        '<div style="flex:1"><div style="font-weight:600;font-size:13px">'+esc(t.name)+'</div>'+
+        '<div style="font-size:11px;color:var(--muted)">'+reasons.join(' · ')+'</div></div>'+
+        '<span class="pill" style="background:var(--red)12;color:var(--red);border:1px solid var(--red)25;font-size:10px">Needs Attention</span>'+
+      '</div>';
+    }).join('');
+    attentionHtml='<div class="panel" style="margin-bottom:14px;border-left:3px solid var(--red)">'+
+      '<div class="panel-title" style="--panel-dot:var(--red)">Teams Needing Attention ('+attentionTeams.length+')</div>'+
+      '<div class="panel-sub" style="margin-bottom:8px">Low health score, significant member loss, or high inactivity</div>'+
+      attRows+
+    '</div>';
+  }
+
+  var seasonColHeaders='';
+  if(ql.length>=2){
+    ql.forEach(function(l){
+      seasonColHeaders+='<th style="text-align:center;font-size:11px" title="'+esc(l)+'">'+esc(l.split('–')[0])+'</th>';
+    });
+    seasonColHeaders+=thSort('±','growth','center');
+  }
+
+  $('content').innerHTML=
+    '<div class="stat-grid">'+
+      statCard({label:'Serve Teams',value:allTeams.length,sub:totalMembers+' total team slots',accent:'var(--accent)',featured:true})+
+      statCard({label:'Avg Health',value:avgHealth+'/100',sub:healthy+' of '+allTeams.length+' healthy',accent:healthColor(avgHealth)})+
+      statCard({label:'Avg Coverage',value:avgCoverage+'%',sub:'Confirmed vs scheduled',accent:colorFor(avgCoverage)})+
+      statCard({label:'Growth Trend',value:(growing>shrinking?'+':'')+growing+' / '+shrinking,sub:growing+' growing · '+shrinking+' shrinking',accent:growing>=shrinking?'var(--green)':'var(--red)'})+
+    '</div>'+
+    catCardsHtml+
+    attentionHtml+
+    growthChartHtml+
+    '<div class="panel" style="padding:16px 20px">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">'+
+        '<div style="font-weight:600;font-size:15px">All Serve Teams ('+filtered.length+')</div>'+
+        '<div style="display:flex;align-items:center;gap:8px">'+
+          (teamsSearchQuery?'<button onclick="teamsSearchQuery=\'\';renderTeamsTab()" style="font-size:11px;color:var(--brand);background:none;border:none;cursor:pointer;font-family:inherit;text-decoration:underline">Clear filter</button>':'')+
+          '<input class="teams-search" id="teams-search-input" placeholder="Search teams or categories..." value="'+esc(teamsSearchQuery)+'" oninput="teamsSearchQuery=this.value;clearTimeout(window._teamsSearchTimer);window._teamsSearchTimer=setTimeout(function(){renderTeamsTab();var si=document.getElementById(\'teams-search-input\');if(si){si.focus();si.setSelectionRange(si.value.length,si.value.length);}},200)"/>'+
+        '</div>'+
+      '</div>'+
+      '<div style="overflow-x:auto">'+
+      '<table class="teams-table">'+
+        '<thead><tr>'+
+          thSort('Team','name')+
+          thSort('Health','health','right')+
+          thSort('Members','members','right')+
+          thSort('Coverage','coverage','right')+
+          seasonColHeaders+
+          '<th style="width:30px"></th>'+
+        '</tr></thead>'+
+        '<tbody>'+rows+'</tbody>'+
+      '</table>'+
+      '</div>'+
+    '</div>';
+}
+
 var bdSearchQuery='';
 function renderBirthdaysTab(){
   if(!BD||bdLoading){
@@ -701,7 +1079,7 @@ function renderBirthdaysTab(){
         '<span style="font-size:18px;color:var(--muted);transition:transform .2s;display:inline-block;transform:rotate('+(bdMonthExpanded?'180':'0')+'deg)">▼</span>'+
       '</div>'+
       (bdMonthExpanded?
-        '<div style="margin-bottom:10px"><input class="vol-search" id="bd-search-input" type="text" placeholder="Search names…" value="'+esc(bdSearchQuery)+'" oninput="bdSearchQuery=this.value;renderBirthdaysTab();var el=document.getElementById(\'bd-search-input\');if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}"/></div>'+
+        '<div style="margin-bottom:10px"><input class="vol-search" id="bd-search-input" type="text" placeholder="Search names…" value="'+esc(bdSearchQuery)+'" oninput="bdSearchQuery=this.value;clearTimeout(window._bdSearchTimer);window._bdSearchTimer=setTimeout(function(){renderBirthdaysTab();var el=document.getElementById(\'bd-search-input\');if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}},200)"/></div>'+
         (Object.keys(dayGroups).length===0?'<div style="color:var(--muted);text-align:center;padding:20px">No birthdays found</div>':listHtml)
       :'')+
     '</div>';
@@ -712,6 +1090,7 @@ var lgExpandedDay=null;
 var lgDetailCache={};
 var lgDetailLoading=null;
 var lgFilters={day:[],gender:[],size:[]};
+var lgSelectedSeason=null; // null = auto-detect current season
 
 function lgDetectGender(name){
   var n=(name||'').toLowerCase();
@@ -911,29 +1290,125 @@ function renderLifeGroupsTab(){
     return;
   }
 
-  var s=LG.stats||{};
-  var groups=LG.groups||[];
+  var allGroups=LG.groups||[];
   var meetingDays=LG.meetingDays||[];
+  var seasons=LG.seasons||[];
+  var currentSeason=LG.currentSeason||'';
+  var seasonStatsMap=LG.seasonStats||{};
+  var transitions=LG.seasonTransitions||[];
 
-  // Connection rate vs active congregation (from People tab if loaded, else estimate)
+  // Default to current season if not explicitly set
+  if(!lgSelectedSeason||(lgSelectedSeason!=='all'&&seasons.indexOf(lgSelectedSeason)<0)){
+    lgSelectedSeason=seasons.indexOf(currentSeason)>=0?currentSeason:(seasons[0]||'all');
+  }
+
+  var showAll=lgSelectedSeason==='all';
+  var groups=showAll?allGroups:allGroups.filter(function(g){return g.season===lgSelectedSeason;});
+  var s=showAll?(LG.stats||{}):(seasonStatsMap[lgSelectedSeason]||LG.stats||{});
+  var mgp=showAll?(LG.multiGroupPeople||[]):(s.multiGroupPeople||[]);
+
+  // Season toggle
+  var seasonToggleHtml='<div class="panel" style="padding:12px 20px;margin-bottom:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">'+
+    '<span style="font-size:12px;font-weight:600;color:var(--text);margin-right:4px">Season:</span>';
+  seasons.forEach(function(sl){
+    var isActive=lgSelectedSeason===sl;
+    var isCurrent=sl===currentSeason;
+    var ss=seasonStatsMap[sl]||{};
+    seasonToggleHtml+='<button onclick="lgSelectedSeason=\''+esc(sl)+'\';renderLifeGroupsTab()" style="'+
+      'display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:10px;font-size:13px;cursor:pointer;border:1px solid;font-family:inherit;font-weight:500;transition:all .15s;'+
+      (isActive?'background:var(--brand);color:#fff;border-color:var(--brand);box-shadow:0 2px 8px rgba(90,174,224,.3);':'background:var(--surface);color:var(--muted);border-color:var(--border);')+
+      '">'+esc(sl)+
+      (isCurrent?' <span style="font-size:9px;opacity:.7;text-transform:uppercase;letter-spacing:.05em">(current)</span>':'')+
+      ' <span style="font-size:11px;opacity:.7">'+fmt(ss.uniqueIndividuals||0)+'</span>'+
+    '</button>';
+  });
+  seasonToggleHtml+='<button onclick="lgSelectedSeason=\'all\';renderLifeGroupsTab()" style="'+
+    'display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:10px;font-size:13px;cursor:pointer;border:1px solid;font-family:inherit;font-weight:500;transition:all .15s;'+
+    (showAll?'background:var(--brand);color:#fff;border-color:var(--brand);box-shadow:0 2px 8px rgba(90,174,224,.3);':'background:var(--surface);color:var(--muted);border-color:var(--border);')+
+    '">All Seasons <span style="font-size:11px;opacity:.7">'+fmt((LG.stats||{}).uniqueIndividuals||0)+'</span></button>';
+  seasonToggleHtml+='</div>';
+
+  // Connection rate vs active congregation
   var activeTotal=P&&P.growth?P.growth.totalActive:0;
-  var connectionRate=activeTotal>0?Math.round(s.totalEnrolled/activeTotal*100):null;
+  var uniqueCount=s.uniqueIndividuals||s.totalEnrolled||0;
+  var connectionRate=activeTotal>0?Math.round(uniqueCount/activeTotal*100):null;
 
   // Stat grid
   var statsHtml='<div class="stat-grid" style="margin-bottom:20px">'+
-    statCard({label:'Active Life Groups',value:fmt(s.total),sub:s.healthyGroups+' healthy · '+s.largeGroups+' large · '+s.smallGroups+' small',accent:'var(--brand)',featured:true})+
-    statCard({label:'Total Enrolled',value:fmt(s.totalEnrolled),sub:'People in at least one life group',accent:'var(--green)'})+
-    statCard({label:'Avg Group Size',value:fmt(s.avgSize),sub:'Target: 8–20 per group',accent:'var(--purple)'})+
+    statCard({label:(showAll?'All':'Season')+' Life Groups',value:fmt(s.total||groups.length),sub:(s.healthyGroups||0)+' healthy · '+(s.largeGroups||0)+' large · '+(s.smallGroups||0)+' small',accent:'var(--brand)',featured:true})+
+    statCard({label:'Unique Individuals',value:fmt(uniqueCount),sub:showAll&&uniqueCount!==(s.totalEnrolled||0)?fmt(s.totalEnrolled)+' total enrollments (some in multiple groups)':'Deduplicated across '+(showAll?'all seasons':lgSelectedSeason),accent:'var(--green)'})+
+    statCard({label:'Avg Group Size',value:fmt(s.avgSize||0),sub:'Target: 8–20 per group',accent:'var(--purple)'})+
     (connectionRate!==null
-      ? statCard({label:'Connection Rate',value:connectionRate+'%',sub:fmt(s.totalEnrolled)+' of '+fmt(activeTotal)+' active members',accent:'var(--teal)'})
+      ? statCard({label:'Connection Rate',value:connectionRate+'%',sub:fmt(uniqueCount)+' of '+fmt(activeTotal)+' active members',accent:'var(--teal)'})
       : statCard({label:'Groups by Day',value:meetingDays.length,sub:(meetingDays.slice().sort(function(a,b){return b.count-a.count;})[0]||{day:''}).day+' is most popular',accent:'var(--amber)'}))+
   '</div>';
 
-  // Meeting day breakdown with click-to-expand
+  // Season transition / retention panel
+  var retentionHtml='';
+  if(transitions.length>0){
+    transitions.forEach(function(t){
+      var retColor=t.retentionRate>=70?'var(--green)':t.retentionRate>=40?'var(--amber)':'var(--red)';
+      retentionHtml+='<div class="panel" style="margin-bottom:14px">'+
+        '<div class="panel-title" style="--panel-dot:var(--teal)">Season Transition: '+esc(t.from)+' → '+esc(t.to)+'</div>'+
+        '<div class="panel-sub">Tracking how people carry over between seasons</div>'+
+        '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">'+
+          '<div class="vd-stat"><div class="vd-stat-label">Retention</div><div class="vd-stat-value" style="color:'+retColor+'">'+t.retentionRate+'%</div></div>'+
+          '<div class="vd-stat"><div class="vd-stat-label">Returning</div><div class="vd-stat-value" style="color:var(--green)">'+t.returning+'</div></div>'+
+          '<div class="vd-stat"><div class="vd-stat-label">New People</div><div class="vd-stat-value" style="color:var(--accent)">'+t.new+'</div></div>'+
+          '<div class="vd-stat"><div class="vd-stat-label">Did Not Return</div><div class="vd-stat-value" style="color:var(--red)">'+t.didNotReturn+'</div></div>'+
+        '</div>';
+
+      // Collapsible name lists
+      function collapsibleList(title,names,color,badgeText){
+        if(names.length===0)return'';
+        var rows=names.map(function(n){
+          var c=avatarColor(n);
+          return'<div style="display:flex;align-items:center;gap:8px;padding:4px 0">'+
+            '<div class="vol-avatar" style="background:'+c+'18;color:'+c+';border:1px solid '+c+'33;width:26px;height:26px;font-size:10px">'+initials(n)+'</div>'+
+            '<span style="font-size:13px;color:var(--text)">'+esc(n)+'</span>'+
+          '</div>';
+        }).join('');
+        return'<div style="margin-bottom:10px">'+
+          '<div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;padding:6px 0" onclick="var bd=this.nextElementSibling;var ar=this.querySelector(\'.tr-arrow\');if(bd.style.display===\'none\'){bd.style.display=\'block\';ar.textContent=\'▾\';}else{bd.style.display=\'none\';ar.textContent=\'▸\';}">'+
+            '<div style="display:flex;align-items:center;gap:8px">'+
+              '<span style="font-weight:600;font-size:13px;color:var(--text)">'+esc(title)+'</span>'+
+              '<span class="pill" style="background:'+color+'18;color:'+color+';border:1px solid '+color+'33;font-size:10px">'+names.length+'</span>'+
+            '</div>'+
+            '<span class="tr-arrow" style="font-size:14px;color:var(--muted2)">▸</span>'+
+          '</div>'+
+          '<div style="display:none;padding:4px 0 8px 8px;max-height:300px;overflow-y:auto">'+rows+'</div>'+
+        '</div>';
+      }
+
+      retentionHtml+=collapsibleList('Returning',t.returningNames,'var(--green)','Returning');
+      retentionHtml+=collapsibleList('New to Life Groups',t.newNames,'var(--accent)','New');
+      retentionHtml+=collapsibleList('Did Not Return',t.didNotReturnNames,'var(--red)','Lost');
+      retentionHtml+='</div>';
+    });
+  }
+
+  // Meeting day breakdown — filter by season
   var dayBreakdownHtml='';
-  if(meetingDays.length>0){
-    var maxDay=Math.max.apply(null,meetingDays.map(function(d){return d.count;}));
-    var dayBars=meetingDays.map(function(d){
+  var seasonMeetingDays=[];
+  if(!showAll){
+    // Rebuild meeting days from filtered groups
+    var dMap={};
+    var dOrder=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+    groups.forEach(function(g){
+      if(!g.schedule)return;
+      var match=dOrder.find(function(d){return g.schedule.indexOf(d)>=0;});
+      if(match){
+        if(!dMap[match])dMap[match]=[];
+        dMap[match].push({id:g.id,name:g.name,members:g.members,schedule:g.schedule});
+      }
+    });
+    seasonMeetingDays=dOrder.filter(function(d){return dMap[d];}).map(function(d){return{day:d,count:dMap[d].length,groups:dMap[d]};});
+  }else{
+    seasonMeetingDays=meetingDays;
+  }
+  if(seasonMeetingDays.length>0){
+    var maxDay=Math.max.apply(null,seasonMeetingDays.map(function(d){return d.count;}));
+    var dayBars=seasonMeetingDays.map(function(d){
       var pct=Math.round(d.count/maxDay*100);
       var isExpanded=lgExpandedDay===d.day;
       var row='<div style="cursor:pointer" onclick="toggleDayExpand(\''+esc(d.day)+'\')">'+
@@ -945,11 +1420,10 @@ function renderLifeGroupsTab(){
         '</div>'+
         '<div style="width:28px;text-align:right;font-size:13px;font-weight:700;font-family:\'DM Mono\',monospace;color:var(--text)">'+d.count+'</div>'+
       '</div></div>';
-      // Expanded group list
       if(isExpanded&&d.groups){
         row+='<div style="margin:0 0 12px 18px;padding:8px 12px;background:var(--surface);border-radius:8px;border:1px solid var(--border)">';
         d.groups.forEach(function(g){
-          row+='<div style="display:flex;align-items:center;gap:8px;padding:4px 0;cursor:pointer" onclick="event.stopPropagation();openGroupDetail(\''+g.id+'\',\''+esc(g.name.replace(/'/g,"\\'"))+'\')">';
+          row+='<div style="display:flex;align-items:center;gap:8px;padding:4px 0;cursor:pointer" onclick="event.stopPropagation();openGroupDetail(\''+g.id+'\',\''+jsesc(g.name)+'\')">';
           row+='<div style="width:24px;height:24px;border-radius:50%;background:var(--brand-light);color:var(--brand-dark);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;flex-shrink:0">'+g.members+'</div>';
           row+='<div style="font-size:12px;color:var(--text);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(g.name)+'</div>';
           row+='<div style="font-size:10px;color:var(--brand);flex-shrink:0">View →</div>';
@@ -966,7 +1440,7 @@ function renderLifeGroupsTab(){
     '</div>';
   }
 
-  // Build filter dimension values from actual data
+  // Build filter dimension values from season-filtered groups
   var allDays={},allGenders={},allSizes={};
   groups.forEach(function(g){
     var day=lgDetectDay(g.schedule); allDays[day]=(allDays[day]||0)+1;
@@ -1017,12 +1491,13 @@ function renderLifeGroupsTab(){
     var schedMain=(schedParts[0]||'').trim();
     var schedSub=(schedParts[1]||'').trim();
     var genderColor=gender==='Women'?'var(--purple)':gender==='Men'?'var(--accent)':gender==='Co-Ed'?'var(--teal)':'var(--muted)';
-    return'<div class="vol-row" style="cursor:pointer" onclick="openGroupDetail(\''+g.id+'\',\''+esc(g.name.replace(/'/g,"\\'"))+'\')">'+
+    var displayName=g.displayName||g.name;
+    return'<div class="vol-row" style="cursor:pointer" onclick="openGroupDetail(\''+g.id+'\',\''+jsesc(g.name)+'\')">'+
       '<div class="vol-avatar" style="background:var(--brand-light);color:var(--brand-dark);font-size:11px;font-weight:700">'+
         fmt(g.members)+
       '</div>'+
       '<div style="flex:1;min-width:0">'+
-        '<div class="vol-name">'+esc(g.name)+'</div>'+
+        '<div class="vol-name">'+esc(displayName)+'</div>'+
         '<div class="vol-meta">'+
           (schedMain?esc(schedMain):'No schedule set')+
           (schedSub?' &nbsp;·&nbsp; <span style="color:var(--muted2)">'+esc(schedSub)+'</span>':'')+
@@ -1036,16 +1511,17 @@ function renderLifeGroupsTab(){
     '</div>';
   }).join('');
 
+  var seasonLabel=showAll?'All Seasons':lgSelectedSeason;
   var groupListHtml='<div class="panel">'+
     '<div class="vol-list-header">'+
-      '<div><div class="panel-title">All Life Groups</div><div class="panel-sub" style="margin-bottom:0">'+
+      '<div><div class="panel-title">'+esc(seasonLabel)+' Life Groups</div><div class="panel-sub" style="margin-bottom:0">'+
         (hasAnyFilter?filtered.length+' of '+groups.length+' groups':groups.length+' groups')+
-        ' · '+fmt(hasAnyFilter?filtered.reduce(function(s,g){return s+g.members;},0):s.totalEnrolled)+' enrolled</div></div>'+
+        ' · '+fmt(uniqueCount)+' unique individuals</div></div>'+
       '<button class="btn-sm" onclick="loadLifeGroupsData(true)">↻ Refresh</button>'+
     '</div>'+
     filterBarHtml+
     '<div class="vol-search-wrap" style="margin-top:4px">'+
-      '<input class="vol-search" type="text" placeholder="Search by group name or schedule…" value="'+esc(lgSearchQuery)+'" oninput="lgSearchQuery=this.value;renderLifeGroupsTab()"/>'+
+      '<input class="vol-search" id="lg-search-input" type="text" placeholder="Search by group name or schedule…" value="'+esc(lgSearchQuery)+'" oninput="lgSearchQuery=this.value;clearTimeout(window._lgSearchTimer);window._lgSearchTimer=setTimeout(function(){renderLifeGroupsTab();var inp=document.getElementById(\'lg-search-input\');if(inp){inp.focus();inp.setSelectionRange(inp.value.length,inp.value.length);}},200)"/>'+
     '</div>'+
     (filtered.length===0
       ?'<div style="color:var(--muted);text-align:center;padding:24px 0;font-size:13px">No groups match your filters</div>'
@@ -1053,10 +1529,38 @@ function renderLifeGroupsTab(){
     (filtered.length>80?'<div style="color:var(--muted);font-size:12px;text-align:center;padding:10px 0">Showing 80 of '+filtered.length+' — search to filter</div>':'')+
   '</div>';
 
-  el.innerHTML=statsHtml+
+  // Multi-group people collapsible section (scoped to selected season)
+  var multiGroupHtml='';
+  if(mgp.length>0){
+    var mgpRows=mgp.map(function(p){
+      var color=avatarColor(p.name);
+      return'<div class="team-member-row" style="padding:8px 10px">'+
+        '<div class="vol-avatar" style="background:'+color+'18;color:'+color+';border:1px solid '+color+'33;width:32px;height:32px;font-size:11px">'+initials(p.name)+'</div>'+
+        '<div style="flex:1">'+
+          '<div style="font-weight:600;font-size:13px">'+esc(p.name)+'</div>'+
+          '<div style="font-size:11px;color:var(--muted)">'+p.groups.map(function(g){return esc(g);}).join(' · ')+'</div>'+
+        '</div>'+
+        '<span class="pill" style="background:var(--accent)15;color:var(--accent);border:1px solid var(--accent)30;font-size:10px">'+p.groups.length+' groups</span>'+
+      '</div>';
+    }).join('');
+
+    multiGroupHtml='<div class="panel" style="margin-top:14px">'+
+      '<div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="var body=this.nextElementSibling;var arrow=this.querySelector(\'.mg-arrow\');if(body.style.display===\'none\'){body.style.display=\'block\';arrow.textContent=\'▾\';}else{body.style.display=\'none\';arrow.textContent=\'▸\';}">'+
+        '<div class="panel-title" style="--panel-dot:var(--accent);margin-bottom:0">People in Multiple Groups — '+esc(seasonLabel)+' ('+mgp.length+')</div>'+
+        '<span class="mg-arrow" style="font-size:16px;color:var(--muted2)">▸</span>'+
+      '</div>'+
+      '<div style="display:none;margin-top:14px">'+
+        '<div class="panel-sub" style="margin-bottom:10px">These individuals are enrolled in 2 or more life groups within '+esc(seasonLabel.toLowerCase())+'.</div>'+
+        mgpRows+
+      '</div>'+
+    '</div>';
+  }
+
+  el.innerHTML=seasonToggleHtml+statsHtml+retentionHtml+
     '<div style="display:grid;grid-template-columns:280px 1fr;gap:14px;margin-bottom:14px;">'+
       dayBreakdownHtml+groupListHtml+
-    '</div>';
+    '</div>'+
+    multiGroupHtml;
 }
 
 async function loadPeopleData(force){
@@ -1282,7 +1786,7 @@ function renderChartOnly(chartId){
     var subEl=$('kidscheckins-sub');
     if(subEl) subEl.innerHTML=ciLegend+' · Individual kids checked in per service';
     var chartEl=$('kidscheckins-chart');
-    if(chartEl) chartEl.innerHTML=barChart(cd.labels,ciDatasets,160,{fullWidth:true});
+    if(chartEl) chartEl.innerHTML=barChart(cd.labels,ciDatasets,160,{fullWidth:true,showTotals:true});
   } else if(chartId==='coverage'){
     var tw=cd.teamsWeekly||[];
     var teamColors=['var(--accent)','var(--green)','var(--purple)','var(--amber)','var(--teal)','var(--red)','#60a5fa','#f472b6'];
@@ -1509,14 +2013,15 @@ function barChart(labels,datasets,height,opts){
     });
   });
 
-  // Show group totals on top (sum of all datasets per label)
+  // Show group totals on top (sum of all datasets per label), positioned above tallest bar
   if(opts.showTotals&&datasets.length>0){
     labels.forEach(function(l,i){
       var total=datasets.reduce(function(s,ds){return s+(ds.data[i]||0);},0);
       if(total<=0)return;
-      var maxBarH=Math.round(total/maxVal*height);
+      var tallest=Math.max.apply(null,datasets.map(function(ds){return ds.data[i]||0;}));
+      var tallestH=Math.round(tallest/maxVal*height);
       var cx=yAxisW+i*(groupW+groupGap)+groupW/2+(groupGap/2);
-      var ty=topPad+height-maxBarH-5;
+      var ty=topPad+height-tallestH-18;
       svg+='<text x="'+cx+'" y="'+ty+'" text-anchor="middle" fill="var(--text,#1a1a2e)" font-size="11" font-weight="700" font-family="DM Mono,monospace">'+fmt(total)+'</text>';
     });
   }
@@ -2017,7 +2522,7 @@ function renderContent(){
         '</div>'+
         (volListExpanded?
           '<div class="vol-search-wrap">'+
-            '<input class="vol-search" id="vol-search-input" type="text" placeholder="Search volunteers…" value="'+esc(volSearchQuery)+'" oninput="volSearchQuery=this.value;renderContent();var el=document.getElementById(\'vol-search-input\');if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}"/>'+
+            '<input class="vol-search" id="vol-search-input" type="text" placeholder="Search volunteers…" value="'+esc(volSearchQuery)+'" oninput="volSearchQuery=this.value;clearTimeout(window._volSearchTimer);window._volSearchTimer=setTimeout(function(){renderContent();var el=document.getElementById(\'vol-search-input\');if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}},200)"/>'+
           '</div>'+
           (filteredVols.length===0?'<div style="color:var(--muted);text-align:center;padding:24px 0;font-size:13px">No volunteers match "'+esc(volSearchQuery)+'"</div>':volRows)+
           (filteredVols.length>50?'<div style="color:var(--muted);font-size:12px;text-align:center;padding:10px 0">Showing 50 of '+filteredVols.length+' — search to filter</div>':'')
@@ -2267,60 +2772,8 @@ function renderContent(){
     renderLifeGroupsTab();
     return;
   } else if(activeTab==='teams'){
-    // Build all-teams list from teamsWeekly (covers entire range, not just latest week)
-    var tw=D.teamsWeekly||[];
-    var li=D.labels.length-1;
-
-    // Build comprehensive team objects from teamsWeekly
-    var allTeams=tw.map(function(t){
-      var totalSched=t.scheduledByWeek.reduce(function(s,v){return s+v;},0);
-      var totalConf=t.confirmedByWeek.reduce(function(s,v){return s+v;},0);
-      var latestSched=t.scheduledByWeek[li]||0;
-      var latestConf=t.confirmedByWeek[li]||0;
-      var latestCov=latestSched?Math.round(latestConf/latestSched*100):0;
-      var avgCov=totalSched?Math.round(totalConf/totalSched*100):0;
-      var memberCount=(D.volunteerProfiles||[]).filter(function(v){return v.teams.indexOf(t.name)>=0;}).length;
-      return {
-        name:t.name, scheduled:totalSched, confirmed:totalConf,
-        latestScheduled:latestSched, latestConfirmed:latestConf,
-        coverage:avgCov, latestCoverage:latestCov,
-        members:memberCount,
-        scheduledByWeek:t.scheduledByWeek, confirmedByWeek:t.confirmedByWeek, coverageByWeek:t.coverageByWeek
-      };
-    }).filter(function(t){return t.scheduled>0;});
-
-    var at90=allTeams.filter(function(t){return t.coverage>=90;}).length;
-    var below=allTeams.filter(function(t){return t.coverage<70;}).length;
-    var avgCoverage=allTeams.length?Math.round(allTeams.reduce(function(s,t){return s+t.coverage;},0)/allTeams.length):0;
-
-    var teamCards=allTeams.map(function(t){
-      var c=colorFor(t.coverage);
-      var sparkHtml='';
-      if(t.coverageByWeek&&t.coverageByWeek.length>1){
-        sparkHtml=spark(t.coverageByWeek,c);
-      }
-      return'<div class="team-card" style="border-left-color:'+c+';cursor:pointer" onclick="openTeamDetail(\''+esc(t.name).replace(/'/g,"\\'")+'\')">'+
-        '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">'+
-          '<div><div style="font-weight:600;font-size:15px">'+esc(t.name)+'</div><div style="font-size:11px;color:var(--muted);margin-top:2px">'+t.members+' member'+(t.members===1?'':'s')+'</div></div>'+pillHTML(t.coverage)+
-        '</div>'+
-        '<div style="display:flex;gap:16px;margin-bottom:10px">'+
-          '<div><div style="color:var(--muted);font-size:11px;text-transform:uppercase;margin-bottom:2px">Sched</div><div style="font-size:20px;font-weight:700;font-family:\'DM Mono\',monospace">'+t.scheduled+'</div></div>'+
-          '<div><div style="color:var(--muted);font-size:11px;text-transform:uppercase;margin-bottom:2px">Confirmed</div><div style="font-size:20px;font-weight:700;font-family:\'DM Mono\',monospace;color:var(--green)">'+t.confirmed+'</div></div>'+
-          '<div><div style="color:var(--muted);font-size:11px;text-transform:uppercase;margin-bottom:2px">Gap</div><div style="font-size:20px;font-weight:700;font-family:\'DM Mono\',monospace;color:var(--amber)">'+(t.scheduled-t.confirmed)+'</div></div>'+
-        '</div>'+
-        '<div class="coverage-bar-bg"><div class="coverage-bar-fill" style="width:'+t.coverage+'%;background:'+c+'"></div></div>'+
-        (sparkHtml?'<div style="margin-top:4px">'+sparkHtml+'</div>':'')+
-      '</div>';
-    }).join('');
-
-    $('content').innerHTML=
-      '<div class="stat-grid">'+
-        statCard({label:'Total Teams',value:allTeams.length,sub:'Active serve teams',accent:'var(--accent)'})+
-        statCard({label:'Avg Coverage',value:avgCoverage+'%',sub:'Across all teams in range',accent:colorFor(avgCoverage)})+
-        statCard({label:'Fully Covered',value:at90,sub:'Teams at 90%+ avg',accent:'var(--green)'})+
-        statCard({label:'Needs Attention',value:below,sub:'Teams below 70% avg',accent:'var(--red)'})+
-      '</div>'+
-      '<div class="team-grid">'+teamCards+'</div>';
+    renderTeamsTab();
+    return;
   }
 }
 
