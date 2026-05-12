@@ -2522,7 +2522,9 @@ function renderContent(){
     var kidsDelta=li>0?(kidsData[li]-kidsData[li-1]):0;
     var kidsPctChange=li>0&&kidsData[li-1]?Math.round(Math.abs(kidsDelta)/kidsData[li-1]*100):0;
     var kidsArrow=kidsDelta>=0?'▲':'▼';
-    var decTotal=decisionsData.reduce(function(a,b){return a+b;},0);
+    var decLast4=decisionsData.slice(-4).reduce(function(a,b){return a+b;},0);
+    var volDelta=li>0?(D.uniqueVolunteers[li]-D.uniqueVolunteers[li-1]):0;
+    var volArrow=volDelta>=0?'▲':'▼';
     $('content').innerHTML=
       '<div class="stat-grid">'+
         statCard({label:'Sunday Attendance',value:fmt(D.attendance[li]),
@@ -2531,11 +2533,11 @@ function renderContent(){
         statCard({label:'City Kids',value:fmt(kidsData[li]),
           sub:li>0?kidsArrow+' '+Math.abs(kidsDelta)+' ('+kidsPctChange+'%) vs prior':'',
           sparkData:kidsData,accent:'var(--amber)'})+
-        statCard({label:'Volunteers',value:fmt(D.uniqueVolunteers[li]),
-          sub:pct(D.confirmed[li],D.uniqueVolunteers[li])+'% confirmed · '+D.scheduled[li]+' slots filled',
+        statCard({label:'Volunteers',value:pct(D.confirmed[li],D.uniqueVolunteers[li])+'% confirmed',
+          sub:li>0?volArrow+' '+Math.abs(volDelta)+' vs prior week':'',
           sparkData:D.uniqueVolunteers,accent:'var(--green)'})+
         statCard({label:'Decisions',value:fmt(decisionsData[li]),
-          sub:fmt(decTotal)+' total in range',sparkData:decisionsData,accent:'var(--purple)'})+
+          sub:fmt(decLast4)+' in the last month',sparkData:decisionsData,accent:'var(--purple)'})+
       '</div>'+
       '<div class="panel" style="--panel-dot:var(--accent)">'+
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">'+
