@@ -1806,6 +1806,17 @@ async function setChartRange(chartId,weeks){
 function renderChartOnly(chartId){
   var cd=chartDataSets[chartId];
   if(!cd)return;
+  var n=chartWeeks[chartId]||currentWeeks;
+  if(n<cd.labels.length){
+    var sl=function(arr){return Array.isArray(arr)?arr.slice(-n):arr;};
+    var sAbs={};Object.keys(cd.attendanceByService||{}).forEach(function(k){sAbs[k]=sl(cd.attendanceByService[k]);});
+    var sCkbs={};Object.keys(cd.kidsCheckinByService||{}).forEach(function(k){sCkbs[k]=sl(cd.kidsCheckinByService[k]);});
+    cd={labels:sl(cd.labels),grouping:cd.grouping,attendance:sl(cd.attendance),attendanceByService:sAbs,
+      decisions:sl(cd.decisions),uniqueVolunteers:sl(cd.uniqueVolunteers),confirmed:sl(cd.confirmed),
+      scheduled:sl(cd.scheduled),firstTimers:sl(cd.firstTimers),kidsCheckinCounts:sl(cd.kidsCheckinCounts),
+      kidsCheckinByService:sCkbs,teamsWeekly:(cd.teamsWeekly||[]).map(function(t){
+        return Object.assign({},t,{coverageByWeek:sl(t.coverageByWeek),scheduledByWeek:sl(t.scheduledByWeek)});})};
+  }
   var lbl=rangeLabels[chartWeeks[chartId]]||(chartWeeks[chartId]+' Weeks');
   var labelEl=$('chart-label-'+chartId);
   if(labelEl) labelEl.textContent=lbl;
