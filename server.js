@@ -74,10 +74,10 @@ function normalizeTeamName(name) {
 }
 // Team categories for frontend grouping
 const TEAM_CATEGORIES = {
-  "Worship": ["Worship Band", "Worship Vocals", "Worship Leads", "Production", "Photography Team", "Platform Speakers", "Online Services"],
+  "Worship": ["Worship Band", "Worship Vocals", "Worship Leads", "Production", "Platform Speakers", "Online Services"],
   "City Kids": ["City Kids", "Elementary (1st-5th)", "Pre-K & K (3-5)", "Nursery - Infants (0-1)", "Nursery - Toddlers (1-3)", "J High (6th-8th)", "Check In"],
   "Guest Services": ["First Impressions Team", "Host Team", "Hospitality Team", "Live Planted Team", "Lobby Team", "Next Step Team", "Outdoor + Parking Team", "Parking Team"],
-  "Operations": ["Anointing Team", "Finance Team", "Pastoral Host Team", "Security Team", "Upper Room Team", "Sunday Rally"],
+  "Operations": ["Anointing Team", "Finance Team", "Pastoral Host Team", "Photography Team", "Security Team", "Upper Room Team", "Sunday Rally"],
 };
 function getTeamCategory(name) {
   for (const [cat, teams] of Object.entries(TEAM_CATEGORIES)) {
@@ -408,7 +408,8 @@ async function buildData(weeks) {
       }
       const attrs   = plan.attributes || {};
       const stName  = (st.attributes && st.attributes.name) || "";
-      const planDateStr = attrs.sort_date
+      const planDateISO = attrs.sort_date ? attrs.sort_date.slice(0, 10) : null;
+      const planDateStr = planDateISO
         ? new Date(attrs.sort_date).toLocaleDateString("en-US", { month:"short", day:"numeric", year:"numeric" })
         : "—";
 
@@ -474,7 +475,7 @@ async function buildData(weeks) {
         p.positions.add(team + "|" + pos);
         // Add each individual time to the set (not the joined string)
         for (const t of individualTimes) p.serviceTimes.add(t);
-        p.schedules.push({ date: planDateStr, serviceType: stName, team, position: pos, serviceTime: svcTime, status: s || "U" });
+        p.schedules.push({ date: planDateStr, dateISO: planDateISO, serviceType: stName, team, position: pos, serviceTime: svcTime, status: s || "U" });
       }
 
       doneCount++;
@@ -542,6 +543,7 @@ async function buildData(weeks) {
       if (!volunteerProfileMap[pKey]) {
         volunteerProfileMap[pKey] = {
           name: data.name,
+          pid:  pKey,  // PCO person ID (or name if no ID was resolved)
           confirmedByWeek: new Array(N).fill(0),
           scheduledByWeek: new Array(N).fill(0),
           declinedByWeek:  new Array(N).fill(0),
@@ -552,7 +554,10 @@ async function buildData(weeks) {
       const profile = volunteerProfileMap[pKey];
       for (const s of data.schedules) {
         profile.scheduledByWeek[wi]++;
-        if (s.status === "C") profile.confirmedByWeek[wi]++;
+        if (s.status === "C") {
+          profile.confirmedByWeek[wi]++;
+          if (s.dateISO) profile.lastServeDateISO = s.dateISO;
+        }
         else if (s.status === "D") profile.declinedByWeek[wi]++;
         if (s.team) profile.teams.add(s.team);
         if (s.position) profile.positions.add(s.position);
@@ -566,6 +571,7 @@ async function buildData(weeks) {
       p.confirmedByWeek.forEach((v, i) => { if (v > 0) lastServeWi = i; });
       return {
         name:            p.name,
+        pid:             p.pid,
         confirmedByWeek: p.confirmedByWeek,
         scheduledByWeek: p.scheduledByWeek,
         declinedByWeek:  p.declinedByWeek,
@@ -574,6 +580,7 @@ async function buildData(weeks) {
         totalConfirmed:  p.confirmedByWeek.reduce((s, v) => s + v, 0),
         totalScheduled:  p.scheduledByWeek.reduce((s, v) => s + v, 0),
         lastServeWi,
+        lastServeDate:   p.lastServeDateISO || null,
       };
     })
     .filter(v => v.totalScheduled > 0)
@@ -610,6 +617,32 @@ async function buildData(weeks) {
         weeksMissing:   recentWks,
       };
     }) : [];
+
+  // ── Disengaging volunteers: served in range but NOT in last 30 days ────────
+  // Uses actual calendar dates, not week buckets, for a precise rolling cutoff.
+  const now30 = new Date();
+  now30.setDate(now30.getDate() - 30);
+  const cutoff30 = now30.toISOString().slice(0, 10); // "YYYY-MM-DD"
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const disengagingVolunteers = volunteerProfiles
+    .filter(v => {
+      if (v.totalConfirmed === 0 || !v.lastServeDate) return false;
+      return v.lastServeDate < cutoff30; // last serve is older than 30 days
+    })
+    .map(v => {
+      const lastDate = new Date(v.lastServeDate + "T12:00:00");
+      const daysAgo = Math.round((Date.now() - lastDate.getTime()) / 86400000);
+      return {
+        name:           v.name,
+        pid:            v.pid,
+        teams:          v.teams,
+        lastServeDate:  v.lastServeDate,
+        lastServeLabel: lastDate.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+        daysAgo,
+        totalServes:    v.totalConfirmed,
+      };
+    })
+    .sort((a, b) => a.daysAgo - b.daysAgo);
 
   // ── Weekly team coverage trends (derived from weeklyPeople) ────────────────
   const weeklyTeamTotals = {};  // teamName → { scheduledByWeek[], confirmedByWeek[] }
@@ -999,6 +1032,69 @@ async function buildData(weeks) {
   // Track kids per week for multi-service detection: weeklyKids[wi][personKey] = { name, services: Set }
   const weeklyKids = Array.from({ length: N }, () => ({}));
   try {
+    // ── Fallback: discover event_time IDs from check-ins for weeks missing headcounts ──
+    // Headcounts are sometimes entered days after the service. If a week bucket has
+    // no event_time IDs yet (no headcounts), scan recent check-ins to find them.
+    const weeksCoveredByHeadcounts = new Set(Object.values(kidsEventTimesByWeek).map(e => e.wi));
+    const missingWis = [];
+    for (let i = 0; i < N; i++) {
+      if (!weeksCoveredByHeadcounts.has(i)) missingWis.push(i);
+    }
+    if (missingWis.length > 0) {
+      console.log("── Kids: weeks missing headcount coverage: [" + missingWis.join(", ") + "] — scanning check-ins for event_times");
+      // Fetch recent check-ins with event_times sideloaded (one page is usually enough)
+      let ciScanUrl = "/check-ins/v2/events/" + KIDS_EVENT_ID + "/check_ins?per_page=100&order=-created_at&include=event_times";
+      let ciScanPages = 0;
+      while (ciScanUrl && ciScanPages < 5) {
+        const ciScanRes = await pcoFetch(ciScanUrl);
+        if (ciScanRes.status !== 200) break;
+        ciScanPages++;
+        const ciScanIncl = (ciScanRes.body && ciScanRes.body.included) || [];
+        const newlyCovered = new Set();
+        for (const inc of ciScanIncl) {
+          if (inc.type !== "EventTime") continue;
+          const etAttrs = inc.attributes || {};
+          const etStartsAt = etAttrs.starts_at;
+          if (!etStartsAt) continue;
+          // Parse the event_time date and determine bucket
+          const etDate = new Date(etStartsAt);
+          const etLocal = parseLocalDate(etStartsAt.split("T")[0]);
+          const wi = bucketIndexFor(etLocal, buckets);
+          // Only skip if headcounts already cover this week (not if we just discovered it this page)
+          if (wi < 0 || (weeksCoveredByHeadcounts.has(wi) && !missingWis.includes(wi))) continue;
+          if (!missingWis.includes(wi)) continue;
+          // Build time label from hour/minute attributes
+          const h = etAttrs.hour != null ? etAttrs.hour : etDate.getHours();
+          const m = etAttrs.minute != null ? etAttrs.minute : etDate.getMinutes();
+          if (h >= 18) continue;  // skip nighttime
+          const ampm = h >= 12 ? "PM" : "AM";
+          const h12 = h % 12 || 12;
+          const timeLabel = h12 + ":" + (m < 10 ? "0" : "") + m + " " + ampm;
+          const key = wi + "_" + inc.id;
+          if (!kidsEventTimesByWeek[key]) {
+            kidsEventTimesByWeek[key] = { etId: inc.id, wi, timeLabel };
+            newlyCovered.add(wi);
+            console.log("── Kids fallback: found event_time " + inc.id + " (" + timeLabel + ") for week bucket " + wi);
+          }
+        }
+        for (const wi of newlyCovered) weeksCoveredByHeadcounts.add(wi);
+        // Stop once all missing weeks are covered
+        const stillMissing = missingWis.filter(i => !weeksCoveredByHeadcounts.has(i));
+        if (stillMissing.length === 0) break;
+        // Check if oldest check-in on page is before our range
+        const ciScanData = (ciScanRes.body && ciScanRes.body.data) || [];
+        if (ciScanData.length > 0) {
+          const oldest = new Date((ciScanData[ciScanData.length - 1].attributes || {}).created_at || 0);
+          if (oldest < since) break;
+        }
+        const ciScanLinks = (ciScanRes.body && ciScanRes.body.links) || {};
+        if (ciScanLinks.next) {
+          const p = new URL(ciScanLinks.next);
+          ciScanUrl = p.pathname + p.search;
+        } else { ciScanUrl = null; }
+      }
+    }
+
     const etEntries = Object.values(kidsEventTimesByWeek);
     console.log("── Kids: " + etEntries.length + " unique event_times found from headcount data");
 
@@ -1119,10 +1215,36 @@ async function buildData(weeks) {
   } catch(e) { console.log("⚠ New families fetch error:", e.message); }
   console.log("── New families by week:", newFamiliesCount.join(", "));
 
+  // ── Team × Service Time breakdown per week (confirmed only) ──────────────────
+  // Counts unique confirmed volunteers per (team, service time) for each weekly bucket.
+  const teamByServiceTimeCountByWeek = weeklyPeople.map(weekMap => {
+    const teamSets = {};
+    for (const [pKey, data] of Object.entries(weekMap)) {
+      for (const s of data.schedules) {
+        if (s.status !== "C") continue;
+        const team = s.team;
+        const times = s.serviceTime ? s.serviceTime.split(", ") : [];
+        for (const t of times) {
+          if (!teamSets[team]) teamSets[team] = {};
+          if (!teamSets[team][t]) teamSets[team][t] = new Set();
+          teamSets[team][t].add(pKey);
+        }
+      }
+    }
+    const out = {};
+    for (const [team, timeMap] of Object.entries(teamSets)) {
+      out[team] = {};
+      for (const [t, s] of Object.entries(timeMap)) out[team][t] = s.size;
+    }
+    return out;
+  });
+  // Backwards-compatible alias for the most-recent-week breakdown
+  const teamByServiceTimeCount = teamByServiceTimeCountByWeek[N - 1];
+
   const elapsed = ((Date.now() - buildStart) / 1000).toFixed(1);
   console.log("✅ buildData(weeks=" + weeks + ") completed in " + elapsed + "s with " + apiCallCount + " API calls");
   broadcast({ step: "Done! (" + elapsed + "s, " + apiCallCount + " API calls)", pct: 100 });
-  return { labels, grouping, weeks, attendance, attendanceByService, kidsAttendance, decisions, sundayBreakdown, scheduled, confirmed, declined, blocked, firstTimers, firstTimerNames, teams, teamsWeekly, weeklyMultiServers, uniqueVolunteers, kidsCheckinCounts, kidsCheckinByService, kidsRoomBreakdown, weeklyMultiServiceKids, uniqueKids, volunteerProfiles, atRiskVolunteers, newFamiliesByWeek, newFamiliesCount, teamSeasonalGrowth, quarterLabels, teamUniqueMembersByWeek, teamMemberDetails, fetchedAt: new Date().toISOString() };
+  return { labels, grouping, weeks, attendance, attendanceByService, kidsAttendance, decisions, sundayBreakdown, scheduled, confirmed, declined, blocked, firstTimers, firstTimerNames, teams, teamsWeekly, weeklyMultiServers, uniqueVolunteers, kidsCheckinCounts, kidsCheckinByService, kidsRoomBreakdown, weeklyMultiServiceKids, uniqueKids, volunteerProfiles, atRiskVolunteers, disengagingVolunteers, newFamiliesByWeek, newFamiliesCount, teamSeasonalGrowth, quarterLabels, teamUniqueMembersByWeek, teamMemberDetails, teamByServiceTimeCount, teamByServiceTimeCountByWeek, fetchedAt: new Date().toISOString() };
 }
 
 // ── /debug ────────────────────────────────────────────────────────────────────
@@ -2137,6 +2259,46 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // ── Volunteer person profile (birthday, tenure, baptism) ────────────────────
+  if (req.method === "GET" && parsed.pathname === "/vol-person") {
+    if (!savedCreds) { res.writeHead(401); return res.end(JSON.stringify({ error: "Not authenticated" })); }
+    const personId = parsed.searchParams.get("id");
+    if (!personId) { res.writeHead(400); return res.end(JSON.stringify({ error: "Missing id" })); }
+    try {
+      const [personRes, defsRes] = await Promise.all([
+        pcoFetch("/people/v2/people/" + personId + "?include=field_data&fields[Person]=first_name,last_name,birthdate,anniversary,created_at,membership,status,gender,marital_status"),
+        pcoFetch("/people/v2/field_definitions?per_page=100&fields[FieldDefinition]=name,field_type"),
+      ]);
+      if (personRes.status !== 200) { res.writeHead(personRes.status); return res.end(JSON.stringify({ error: "PCO returned " + personRes.status })); }
+      const attrs = (personRes.body.data && personRes.body.data.attributes) || {};
+      // Build field definition name map
+      const defMap = {};
+      for (const d of ((defsRes.body && defsRes.body.data) || [])) {
+        defMap[d.id] = (d.attributes && d.attributes.name) || d.id;
+      }
+      // Map field_data with resolved names
+      const fieldData = ((personRes.body.included || []).filter(i => i.type === "FieldDatum"))
+        .map(f => {
+          const defId = f.relationships && f.relationships.field_definition && f.relationships.field_definition.data && f.relationships.field_definition.data.id;
+          return { name: defMap[defId] || null, value: (f.attributes && f.attributes.value) || null };
+        })
+        .filter(f => f.name && f.value);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        birthdate:    attrs.birthdate    || null,
+        anniversary:  attrs.anniversary  || null,
+        createdAt:    attrs.created_at   || null,
+        membership:   attrs.membership   || null,
+        gender:       attrs.gender       || null,
+        maritalStatus: attrs.marital_status || null,
+        fieldData,
+      }));
+    } catch(e) {
+      res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
   // ── Life Groups endpoint ─────────────────────────────────────────────────────
   if (req.method === "GET" && parsed.pathname === "/lifegroups-data") {
     if (!savedCreds) { res.writeHead(401); return res.end(JSON.stringify({ error: "Not authenticated" })); }
@@ -2217,9 +2379,28 @@ const server = http.createServer(async (req, res) => {
         return "January–March"; // default — most recent full season
       }
 
-      // Tag each group with its season and a clean display name (strip season suffix)
+      // Detect specific start month (1-12) for each group — distinct from broad season label.
+      // January groups end in March and people join April groups.
+      // February groups end in April and people join May groups. Etc.
+      const MONTH_NAMES = ['january','february','march','april','may','june',
+                           'july','august','september','october','november','december'];
+      function detectGroupStartMonth(group) {
+        const name = (group.name || '').toLowerCase();
+        const sched = (group.schedule || '').toLowerCase();
+        // Look for explicit month name at word boundary in name or schedule
+        for (let i = 0; i < MONTH_NAMES.length; i++) {
+          const re = new RegExp('\\b' + MONTH_NAMES[i] + '\\b');
+          if (re.test(name) || re.test(sched)) return i + 1;
+        }
+        // Fall back to createdAt month
+        if (group.createdAt) return parseInt(group.createdAt.split('-')[1]);
+        return null;
+      }
+
+      // Tag each group with its season, start month, and a clean display name
       for (const g of groups) {
         g.season = detectSeason(g);
+        g.startMonth = detectGroupStartMonth(g);
         g.displayName = g.name.replace(/\s*\|\s*(january|april|july|october)[\s\-–]+(march|june|september|december)\s*/i, "").trim();
       }
 
@@ -2237,12 +2418,27 @@ const server = http.createServer(async (req, res) => {
       const seasonOrder = ["January–March", "April–June", "July–September", "October–December"];
       allSeasons.sort((a, b) => seasonOrder.indexOf(a) - seasonOrder.indexOf(b));
 
+      // Active DNR is month-based, not season-based.
+      // Groups rotate every 3 months from their start month:
+      //   January groups → join April groups
+      //   February groups → join May groups
+      //   March groups → join June groups
+      // The "due" month right now = 3 months before the upcoming calendar month.
+      // e.g. currentMonth=3 (March) → nextMonth=4 (April) → dueFromMonth=1 (January)
+      const nextCalMonth = (currentMonth % 12) + 1;
+      const activeDnrFromMonth = ((nextCalMonth - 4 + 12) % 12) + 1; // 3 months before next
+      const activeDnrToMonth = nextCalMonth;
+      const activeDnrFrom = MONTH_NAMES[activeDnrFromMonth - 1].charAt(0).toUpperCase() + MONTH_NAMES[activeDnrFromMonth - 1].slice(1);
+      const activeDnrTo = MONTH_NAMES[activeDnrToMonth - 1].charAt(0).toUpperCase() + MONTH_NAMES[activeDnrToMonth - 1].slice(1);
+
       // ── Fetch member person IDs per group ──────────────────────────────────
-      const groupPersonIds = {};  // groupId → Set of person IDs
+      const groupPersonIds = {};   // groupId → Set of person IDs
+      const membershipRoles = {};  // groupId → { personId → "leader"|"member" }
       const personNameMap = {};    // personId → name
       await pLimit(
         groups.map(g => async () => {
           const pids = new Set();
+          if (!membershipRoles[g.id]) membershipRoles[g.id] = {};
           let memUrl = "/groups/v2/groups/" + g.id + "/memberships?per_page=100&include=person&fields[Person]=first_name,last_name";
           while (memUrl) {
             const r = await pcoFetch(memUrl);
@@ -2255,6 +2451,7 @@ const server = http.createServer(async (req, res) => {
               const pid = m.relationships && m.relationships.person && m.relationships.person.data && m.relationships.person.data.id;
               if (pid) {
                 pids.add(pid);
+                membershipRoles[g.id][pid] = (m.attributes || {}).role || "member";
                 if (!personNameMap[pid]) {
                   const pa = pMap[pid] || {};
                   personNameMap[pid] = ((pa.first_name || "") + " " + (pa.last_name || "")).trim();
@@ -2268,6 +2465,27 @@ const server = http.createServer(async (req, res) => {
         }),
         6
       );
+
+      // Build group leader map (groupId → comma-separated leader names)
+      const groupLeaderMap = {};
+      for (const g of groups) {
+        const roles = membershipRoles[g.id] || {};
+        const leaders = Object.entries(roles)
+          .filter(([, role]) => role === "leader")
+          .map(([pid]) => personNameMap[pid] || "")
+          .filter(n => n);
+        groupLeaderMap[g.id] = leaders.length ? leaders.join(", ") : null;
+      }
+
+      // Build person → group history across all seasons
+      const personGroupHistory = {};  // personId → [{season, groupName, leader}]
+      for (const g of groups) {
+        const leader = groupLeaderMap[g.id] || null;
+        for (const pid of (groupPersonIds[g.id] || [])) {
+          if (!personGroupHistory[pid]) personGroupHistory[pid] = [];
+          personGroupHistory[pid].push({ season: g.season, groupName: g.displayName || g.name, leader });
+        }
+      }
 
       // ── Per-season stats ───────────────────────────────────────────────────
       const seasonStats = {};
@@ -2326,9 +2544,35 @@ const server = http.createServer(async (req, res) => {
           newNames: [...newPeople].map(id => personNameMap[id] || "Unknown").sort(),
           didNotReturn: didNotReturn.size,
           didNotReturnNames: [...didNotReturn].map(id => personNameMap[id] || "Unknown").sort(),
+          didNotReturnPeople: [...didNotReturn].map(id => {
+            const prevGroups = groups
+              .filter(g => g.season === prevSeason && (groupPersonIds[g.id] || new Set()).has(id))
+              .map(g => ({ name: g.displayName || g.name, leader: groupLeaderMap[g.id] || null }));
+            return { id, name: personNameMap[id] || "Unknown", prevGroups };
+          }).sort((a, b) => a.name.localeCompare(b.name)),
           retentionRate: prevIds.size > 0 ? Math.round(returning.size / prevIds.size * 100) : 0,
         });
       }
+
+      // ── Active DNR: month-based, not season-based ─────────────────────────
+      // Build month → Set of person IDs using each group's specific start month
+      const monthPersonIds = {}; // month (1-12) → Set of person IDs
+      for (const g of groups) {
+        if (!g.startMonth) continue;
+        if (!monthPersonIds[g.startMonth]) monthPersonIds[g.startMonth] = new Set();
+        for (const pid of (groupPersonIds[g.id] || new Set())) {
+          monthPersonIds[g.startMonth].add(pid);
+        }
+      }
+      const fromMonthIds = monthPersonIds[activeDnrFromMonth] || new Set();
+      const toMonthIds   = monthPersonIds[activeDnrToMonth]   || new Set();
+      const activeDnrIds = [...fromMonthIds].filter(id => !toMonthIds.has(id));
+      const activeDnrPeople = activeDnrIds.map(id => {
+        const prevGroups = groups
+          .filter(g => g.startMonth === activeDnrFromMonth && (groupPersonIds[g.id] || new Set()).has(id))
+          .map(g => ({ name: g.displayName || g.name, leader: groupLeaderMap[g.id] || null }));
+        return { id, name: personNameMap[id] || "Unknown", prevGroups };
+      }).sort((a, b) => a.name.localeCompare(b.name));
 
       // ── Global stats (all seasons combined, deduplicated) ──────────────────
       const allPersonIds = new Set();
@@ -2374,6 +2618,8 @@ const server = http.createServer(async (req, res) => {
         stats: { total: groups.length, totalEnrolled, uniqueIndividuals, avgSize, healthyGroups, largeGroups, smallGroups },
         meetingDays, multiGroupPeople,
         seasons: allSeasons, currentSeason: currentSeasonLabel, seasonStats, seasonTransitions,
+        activeDnrFrom, activeDnrTo, activeDnrPeople,
+        personGroupHistory,
       };
       lifegroupsCache = { ts: Date.now(), payload };
       console.log("✅ Life groups data built — " + groups.length + " groups, " + uniqueIndividuals + " unique individuals across " + allSeasons.length + " seasons");
@@ -2425,211 +2671,580 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && parsed.pathname === "/report") {
     if (!savedCreds) { res.writeHead(401); return res.end("Not authenticated — open the dashboard first and enter credentials."); }
     try {
-      // Gather data from caches or build fresh
-      const weeks = 4;
       const CACHE_TTL = 30 * 60 * 1000;
-      let D = dataCache[weeks] && (Date.now() - dataCache[weeks].ts < CACHE_TTL) ? dataCache[weeks].payload : null;
-      if (!D) {
-        D = await buildData(weeks);
-        dataCache[weeks] = { ts: Date.now(), payload: D };
-      }
-      const li = D.labels.length - 1;
+      let D4 = dataCache[4] && (Date.now() - dataCache[4].ts < CACHE_TTL) ? dataCache[4].payload : null;
+      if (!D4) { D4 = await buildData(4); dataCache[4] = { ts: Date.now(), payload: D4 }; }
 
-      // Life groups (from cache only — non-fatal if not loaded yet)
-      const lgData = lifegroupsCache ? lifegroupsCache.payload : null;
-
-      // Helper functions
-      const fmt = n => (n||0).toLocaleString();
-      const pct = (a,b) => b ? Math.round(a/b*100) : 0;
-      const delta = (curr, prev) => {
+      const li = D4.labels.length - 1;
+      const fmt = n => (n || 0).toLocaleString();
+      const pct = (n, tot) => tot > 0 ? Math.round((n / tot) * 100) : 0;
+      const deltaHtml = (curr, prev) => {
         const diff = curr - prev;
-        const arrow = diff >= 0 ? "▲" : "▼";
-        const color = diff >= 0 ? "#16a34a" : "#dc2626";
-        return '<span style="color:' + color + ';font-weight:600">' + arrow + ' ' + Math.abs(diff) + '</span>';
+        if (diff === 0) return '<span style="color:#6b7280">— no change</span>';
+        const arrow = diff > 0 ? "▲" : "▼";
+        const color = diff > 0 ? "#16a34a" : "#dc2626";
+        return `<span style="color:${color}">${arrow} ${Math.abs(diff)}</span>`;
       };
 
-      // Report date
       const now = new Date();
-      const reportDate = now.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
-      const sundayLabel = D.labels[li] || "This Week";
+      const reportDate = now.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: CHURCH_CONFIG.timezone });
+      const sundayLabel = D4.labels[li] || "This Week";
 
-      // Attendance
-      const attCurr = D.attendance[li] || 0;
-      const attPrev = li > 0 ? (D.attendance[li-1] || 0) : 0;
-      const attAvg = D.attendance.length ? Math.round(D.attendance.reduce((a,b) => a+b, 0) / D.attendance.length) : 0;
+      // ── Metrics ──
+      const attTotal = D4.attendance[li] || 0;
+      const attPrev  = li > 0 ? (D4.attendance[li-1] || 0) : 0;
+      const decisions   = (D4.decisions || [])[li] || 0;
+      const decPrev     = li > 0 ? ((D4.decisions || [])[li-1] || 0) : 0;
+      const kidsTotal   = (D4.kidsCheckinCounts || D4.kidsAttendance || [])[li] || 0;
+      const kidsPrev    = li > 0 ? ((D4.kidsCheckinCounts || D4.kidsAttendance || [])[li-1] || 0) : 0;
+      const volUnique   = (D4.uniqueVolunteers || [])[li] || 0;
+      const volPrev     = li > 0 ? ((D4.uniqueVolunteers || [])[li-1] || 0) : 0;
+      const multiServers = (D4.weeklyMultiServers || [])[li] || [];
+      const newFamCurr  = (D4.newFamiliesCount || [])[li] || 0;
+      const newFamPrev  = li > 0 ? ((D4.newFamiliesCount || [])[li-1] || 0) : 0;
+      const ftNames     = D4.firstTimerNames ? (D4.firstTimerNames[li] || []) : [];
 
-      // Kids
-      const kidsCurr = (D.kidsCheckinCounts || D.kidsAttendance || [])[li] || 0;
-      const kidsPrev = li > 0 ? ((D.kidsCheckinCounts || D.kidsAttendance || [])[li-1] || 0) : 0;
+      const CURRENT_SERVICES = new Set(["8:30 AM", "10:00 AM", "11:30 AM", "1:00 PM"]);
+      const sortTimes = keys => keys.slice().sort((a, b) => {
+        const pa = Date.parse("2000-01-01 " + a), pb = Date.parse("2000-01-01 " + b);
+        return (isNaN(pa) ? 9999 : pa) - (isNaN(pb) ? 9999 : pb);
+      });
 
-      // Volunteers
-      const volUnique = (D.uniqueVolunteers || [])[li] || 0;
-      const volScheduled = (D.scheduled || [])[li] || 0;
-      const volConfirmed = (D.confirmed || [])[li] || 0;
-      const volRate = pct(volConfirmed, volUnique);
+      // Attendance by service time
+      const attByService = D4.attendanceByService || {};
+      const attServiceKeys = sortTimes(Object.keys(attByService).filter(k => CURRENT_SERVICES.has(k)));
 
-      // First timers
-      const ftNames = D.firstTimerNames ? (D.firstTimerNames[li] || []) : [];
-      const ftConfirmed = ftNames.filter(f => f.status === "C").length;
-
-      // Decisions
-      const decCurr = (D.decisions || [])[li] || 0;
-      const decTotal = (D.decisions || []).reduce((a,b) => a+b, 0);
-
-      // Teams coverage
-      const teams = D.teams || [];
-      const teamsAbove90 = teams.filter(t => t.coverage >= 90).length;
-      const teamsBelow70 = teams.filter(t => t.coverage < 70).length;
-      const topNeeds = teams.filter(t => t.coverage < 70).sort((a,b) => a.coverage - b.coverage).slice(0, 5);
-
-      // At-risk volunteers
-      const atRisk = D.atRiskVolunteers || [];
-
-      // Life groups
-      const lgStats = lgData && lgData.stats ? lgData.stats : null;
-
-      // Build sparkline SVG helper
-      function miniSparkSvg(data, color, w, h) {
-        if (!data || data.length < 2) return "";
-        const max = Math.max.apply(null, data) || 1;
-        const points = data.map((v, i) => {
-          const x = Math.round(i / (data.length - 1) * w);
-          const y = Math.round(h - (v / max * (h - 4)) - 2);
-          return x + "," + y;
-        }).join(" ");
-        return '<svg width="' + w + '" height="' + h + '" style="vertical-align:middle"><polyline points="' + points + '" fill="none" stroke="' + color + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      // Kids room breakdown
+      const roomBreakdown = D4.kidsRoomBreakdown || {};
+      const roomServiceKeys = sortTimes(Object.keys(roomBreakdown).filter(k => CURRENT_SERVICES.has(k)));
+      const allRooms = [...new Set(roomServiceKeys.flatMap(st => Object.keys(roomBreakdown[st] || {})))].sort();
+      const kidsServiceKeys = roomServiceKeys;
+      const kidsByServiceFromRooms = {};
+      for (const st of kidsServiceKeys) {
+        kidsByServiceFromRooms[st] = allRooms.reduce((s, room) => s + (((roomBreakdown[st] || {})[room] || [])[li] || 0), 0);
       }
+      const kidsTotalFromRooms = kidsServiceKeys.reduce((s, st) => s + kidsByServiceFromRooms[st], 0);
 
-      // ── Build HTML ──
-      const html = '<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
-        '<title>Weekly Report — ' + sundayLabel + '</title>' +
-        '<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">' +
-        '<style>' +
-          '*{margin:0;padding:0;box-sizing:border-box}' +
-          'body{font-family:"DM Sans",sans-serif;background:#f8f9fa;color:#1a1a2e;padding:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}' +
-          '.page{max-width:800px;margin:0 auto;background:#fff;min-height:100vh}' +
-          '.header{background:linear-gradient(135deg,#1a1a2e 0%,#2d2d44 100%);color:#fff;padding:32px 40px;display:flex;align-items:center;justify-content:space-between}' +
-          '.header-left{display:flex;align-items:center;gap:16px}' +
-          '.header-logo{width:44px;height:44px;border-radius:10px;object-fit:contain}' +
-          '.header h1{font-size:22px;font-weight:700;letter-spacing:-.02em}' +
-          '.header-date{font-size:13px;opacity:.7;margin-top:2px}' +
-          '.header-right{text-align:right;font-size:12px;opacity:.6;line-height:1.6}' +
-          '.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid #e5e7eb}' +
-          '.kpi{padding:20px 24px;border-right:1px solid #e5e7eb;text-align:center}' +
-          '.kpi:last-child{border-right:none}' +
-          '.kpi-value{font-size:28px;font-weight:700;letter-spacing:-.02em;line-height:1}' +
-          '.kpi-label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#6b7280;margin-bottom:6px;font-weight:600}' +
-          '.kpi-delta{font-size:12px;margin-top:4px;color:#6b7280}' +
-          '.kpi-spark{margin-top:6px}' +
-          '.section{padding:24px 40px;border-bottom:1px solid #e5e7eb}' +
-          '.section:last-child{border-bottom:none}' +
-          '.section-title{font-size:15px;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:8px}' +
-          '.section-title .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}' +
-          'table{width:100%;border-collapse:collapse;font-size:13px}' +
-          'th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#6b7280;font-weight:600;padding:6px 8px;border-bottom:2px solid #e5e7eb}' +
-          'td{padding:8px;border-bottom:1px solid #f3f4f6}' +
-          '.badge{display:inline-block;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:600}' +
-          '.badge-green{background:#dcfce7;color:#16a34a}' +
-          '.badge-amber{background:#fef3c7;color:#d97706}' +
-          '.badge-red{background:#fee2e2;color:#dc2626}' +
-          '.badge-blue{background:#dbeafe;color:#2563eb}' +
-          '.ft-row{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #f3f4f6}' +
-          '.ft-avatar{width:28px;height:28px;border-radius:7px;background:#f0e6ff;color:#7c3aed;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0}' +
-          '.ft-name{font-size:13px;font-weight:600}' +
-          '.ft-meta{font-size:11px;color:#6b7280}' +
-          '.progress-bar{height:6px;background:#f3f4f6;border-radius:99px;overflow:hidden;margin-top:4px}' +
-          '.progress-fill{height:100%;border-radius:99px}' +
-          '.two-col{display:grid;grid-template-columns:1fr 1fr;gap:24px}' +
-          '.footer{padding:20px 40px;text-align:center;font-size:11px;color:#9ca3af;border-top:1px solid #e5e7eb}' +
-          '@media print{body{background:#fff;padding:0}.page{box-shadow:none}.header{-webkit-print-color-adjust:exact}}' +
-          '@media(max-width:640px){.kpi-grid{grid-template-columns:repeat(2,1fr)}.two-col{grid-template-columns:1fr}.header{flex-direction:column;gap:12px;text-align:center}.section{padding:20px 24px}}' +
-        '</style></head><body><div class="page">' +
+      // Volunteers by team & service (use per-week breakdown if available)
+      const volByTeam = (D4.teamByServiceTimeCountByWeek ? D4.teamByServiceTimeCountByWeek[li] : D4.teamByServiceTimeCount) || {};
+      const volTeamNames = Object.keys(volByTeam)
+        .filter(tn => [...CURRENT_SERVICES].some(st => (volByTeam[tn][st] || 0) > 0))
+        .sort((a, b) => {
+          const totA = [...CURRENT_SERVICES].reduce((s, st) => s + (volByTeam[a][st] || 0), 0);
+          const totB = [...CURRENT_SERVICES].reduce((s, st) => s + (volByTeam[b][st] || 0), 0);
+          return totB - totA;
+        });
+      const volServiceCols = sortTimes([...CURRENT_SERVICES]);
+      const volTeamColHeaders = volServiceCols.map(st => `<th class="num">${st}</th>`).join("");
+      const volTeamRows = volTeamNames.map(tn => {
+        const cells = volServiceCols.map(st => { const v = (volByTeam[tn] || {})[st] || 0; return `<td class="num">${v > 0 ? v : "—"}</td>`; }).join("");
+        const rowTotal = volServiceCols.reduce((s, st) => s + ((volByTeam[tn] || {})[st] || 0), 0);
+        return `<tr><td>${tn}</td>${cells}<td class="num" style="font-weight:700">${rowTotal}</td></tr>`;
+      }).join("");
+      const volTotalCells = volServiceCols.map(st => { const c = volTeamNames.reduce((s, tn) => s + ((volByTeam[tn] || {})[st] || 0), 0); return `<td class="num">${c > 0 ? c : "—"}</td>`; }).join("");
+      const volGrandTotal = volServiceCols.reduce((s, st) => s + volTeamNames.reduce((ss, tn) => ss + ((volByTeam[tn] || {})[st] || 0), 0), 0);
 
-        // ── Header
-        '<div class="header">' +
-          '<div class="header-left">' +
-            '<img src="/logo.png" class="header-logo" alt="CCC">' +
-            '<div><h1>Weekly Leadership Report</h1><div class="header-date">' + reportDate + '</div></div>' +
-          '</div>' +
-          '<div class="header-right">City Church Chicago<br>Week of ' + sundayLabel + '</div>' +
-        '</div>' +
+      // ── Styles (same as Easter report) ──
+      const css = `
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{font-family:"DM Sans",sans-serif;background:#f8f9fa;color:#1a1a2e;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+        .page{max-width:840px;margin:0 auto;background:#fff;min-height:100vh}
+        .header{background:linear-gradient(135deg,#1a1a2e 0%,#2d2d44 100%);color:#fff;padding:32px 40px;display:flex;align-items:center;justify-content:space-between}
+        .header-left{display:flex;align-items:center;gap:16px}
+        .header-logo{width:44px;height:44px;border-radius:10px;object-fit:contain}
+        .header h1{font-size:22px;font-weight:700;letter-spacing:-.02em}
+        .header-date{font-size:13px;opacity:.7;margin-top:2px}
+        .header-right{text-align:right;font-size:12px;opacity:.6;line-height:1.6}
+        .kpi-grid{display:grid;grid-template-columns:repeat(5,1fr);border-bottom:1px solid #e5e7eb}
+        .kpi{padding:14px 12px;border-right:1px solid #e5e7eb;text-align:center}
+        .kpi:last-child{border-right:none}
+        .kpi-value{font-size:26px;font-weight:700;letter-spacing:-.03em;line-height:1}
+        .kpi-label{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#6b7280;margin-bottom:6px;font-weight:600}
+        .kpi-sub{font-size:12px;margin-top:6px;color:#6b7280}
+        .section{padding:24px 40px;border-bottom:1px solid #e5e7eb}
+        .section:last-of-type{border-bottom:none}
+        .section-title{font-size:15px;font-weight:700;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+        .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+        table{width:100%;border-collapse:collapse;font-size:13px}
+        th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#6b7280;font-weight:600;padding:6px 10px;border-bottom:2px solid #e5e7eb}
+        td{padding:8px 10px;border-bottom:1px solid #f3f4f6;color:#1a1a2e}
+        tr:last-child td{border-bottom:none}
+        .num{text-align:right;font-weight:600;font-variant-numeric:tabular-nums}
+        .pct{text-align:right;color:#6b7280;font-size:12px}
+        .total-row td{font-weight:700;border-top:2px solid #e5e7eb;border-bottom:none;background:#f9fafb}
+        .person-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #f3f4f6}
+        .person-row:last-child{border-bottom:none}
+        .avatar{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0}
+        .person-name{font-size:13px;font-weight:600}
+        .person-meta{font-size:11px;color:#6b7280}
+        .badge{display:inline-block;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:600}
+        .badge-green{background:#dcfce7;color:#16a34a}
+        .badge-amber{background:#fef3c7;color:#d97706}
+        .badge-blue{background:#dbeafe;color:#2563eb}
+        .badge-purple{background:#f0e6ff;color:#7c3aed}
+        .empty{color:#9ca3af;font-size:13px;font-style:italic;padding:6px 0}
+        .footer{padding:20px 40px;text-align:center;font-size:11px;color:#9ca3af;border-top:1px solid #e5e7eb}
+        @media print{body{background:#fff}.page{box-shadow:none}.header{-webkit-print-color-adjust:exact}}
+        @media(max-width:640px){.kpi-grid{grid-template-columns:repeat(2,1fr)}.kpi:nth-child(2n){border-right:none}.header{flex-direction:column;gap:12px}.section{padding:20px 24px}}
+      `;
 
-        // ── KPI Grid
-        '<div class="kpi-grid">' +
-          '<div class="kpi"><div class="kpi-label">Sunday Attendance</div><div class="kpi-value">' + fmt(attCurr) + '</div><div class="kpi-delta">' + delta(attCurr, attPrev) + ' vs last week</div><div class="kpi-spark">' + miniSparkSvg(D.attendance, '#5AAEE0', 80, 24) + '</div></div>' +
-          '<div class="kpi"><div class="kpi-label">City Kids</div><div class="kpi-value">' + fmt(kidsCurr) + '</div><div class="kpi-delta">' + delta(kidsCurr, kidsPrev) + ' vs last week</div><div class="kpi-spark">' + miniSparkSvg(D.kidsCheckinCounts || D.kidsAttendance, '#d97706', 80, 24) + '</div></div>' +
-          '<div class="kpi"><div class="kpi-label">Volunteers</div><div class="kpi-value">' + fmt(volUnique) + '</div><div class="kpi-delta">' + volRate + '% confirmed</div><div class="kpi-spark">' + miniSparkSvg(D.uniqueVolunteers, '#16a34a', 80, 24) + '</div></div>' +
-          '<div class="kpi"><div class="kpi-label">Decisions</div><div class="kpi-value">' + fmt(decCurr) + '</div><div class="kpi-delta">' + fmt(decTotal) + ' in last ' + weeks + ' weeks</div><div class="kpi-spark">' + miniSparkSvg(D.decisions, '#7c3aed', 80, 24) + '</div></div>' +
-        '</div>' +
+      const initials = name => (name || "?").split(" ").map(w => w[0] || "").join("").slice(0, 2).toUpperCase();
 
-        // ── Attendance Trend Table
-        '<div class="section">' +
-          '<div class="section-title"><div class="dot" style="background:#5AAEE0"></div>4-Week Trend</div>' +
-          '<table><thead><tr><th>Week</th><th style="text-align:right">Attendance</th><th style="text-align:right">vs Prior</th><th style="text-align:right">Volunteers</th><th style="text-align:right">Confirmed %</th><th style="text-align:right">Kids</th><th style="text-align:right">Decisions</th></tr></thead><tbody>' +
-          D.labels.map((l, i) => {
-            const att = D.attendance[i] || 0;
-            const prev = i > 0 ? (D.attendance[i-1] || 0) : att;
-            const vol = (D.uniqueVolunteers || [])[i] || 0;
-            const conf = (D.confirmed || [])[i] || 0;
-            const sched = (D.scheduled || [])[i] || 0;
-            const kids = (D.kidsCheckinCounts || D.kidsAttendance || [])[i] || 0;
-            const dec = (D.decisions || [])[i] || 0;
-            const rate = vol ? Math.round(conf / vol * 100) : 0;
-            const isLatest = i === li;
-            const style = isLatest ? ' style="background:#f0f9ff;font-weight:600"' : '';
-            return '<tr' + style + '><td>' + l + (isLatest ? ' ●' : '') + '</td><td style="text-align:right">' + fmt(att) + '</td><td style="text-align:right">' + (i > 0 ? delta(att, prev) : '—') + '</td><td style="text-align:right">' + fmt(vol) + '</td><td style="text-align:right">' + rate + '%</td><td style="text-align:right">' + fmt(kids) + '</td><td style="text-align:right">' + fmt(dec) + '</td></tr>';
-          }).join("") +
-          '</tbody></table>' +
-        '</div>' +
+      const attServiceRows = attServiceKeys.map(svc => {
+        const count = (attByService[svc] || [])[li] || 0;
+        return `<tr><td>${svc}</td><td class="num">${fmt(count)}</td><td class="pct">${pct(count, attTotal)}%</td></tr>`;
+      }).join("");
 
-        // ── Upcoming Birthdays
-        (() => {
-          const bd = birthdaysCache ? birthdaysCache.payload : null;
-          if (!bd || !bd.thisWeek || bd.thisWeek.length === 0) {
-            // Try to build birthday data inline
-            return '<div class="section">' +
-              '<div class="section-title"><div class="dot" style="background:#d97706"></div>Upcoming Birthdays</div>' +
-              '<div style="color:#6b7280;font-size:13px">Birthday data not yet loaded — visit the Birthdays tab first</div>' +
-            '</div>';
-          }
-          const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-          return '<div class="section">' +
-            '<div class="section-title"><div class="dot" style="background:#d97706"></div>Upcoming Birthdays — ' + bd.thisWeek.length + ' this week</div>' +
-            bd.thisWeek.map(p => {
-              const initials = p.name.split(" ").map(w => (w[0]||"")).join("").slice(0,2).toUpperCase();
-              const dayLabel = p.daysUntil === 0 ? "Today!" : p.daysUntil === 1 ? "Tomorrow" : "in " + p.daysUntil + " days";
-              const bdLabel = monthNames[p.month-1] + " " + p.day;
-              const avatarBg = p.daysUntil === 0 ? "#d97706" : "#fef3c7";
-              const avatarColor = p.daysUntil === 0 ? "#fff" : "#d97706";
-              const birthYear = parseInt(p.birthdate.split("-")[0]);
-              const turningAge = birthYear > 1900 && birthYear < now.getFullYear() ? " · Turning " + (now.getFullYear() - birthYear) : "";
-              return '<div class="ft-row"><div class="ft-avatar" style="background:' + avatarBg + ';color:' + avatarColor + '">' + initials + '</div><div style="flex:1"><div class="ft-name">' + p.name + '</div><div class="ft-meta">' + bdLabel + turningAge + '</div></div><span class="badge badge-amber">' + dayLabel + '</span></div>';
-            }).join("") +
-          '</div>';
-        })() +
+      const kidsServiceRows = kidsServiceKeys.map(svc => {
+        const count = kidsByServiceFromRooms[svc] || 0;
+        return `<tr><td>${svc}</td><td class="num">${fmt(count)}</td><td class="pct">${pct(count, kidsTotalFromRooms)}%</td></tr>`;
+      }).join("");
 
-        // ── First-Time Volunteers
-        (ftNames.length > 0 ?
-          '<div class="section">' +
-            '<div class="section-title"><div class="dot" style="background:#7c3aed"></div>First-Time Volunteers — ' + ftConfirmed + ' confirmed, ' + (ftNames.length - ftConfirmed) + ' pending</div>' +
-            ftNames.map(f => {
-              const initials = f.name.split(" ").map(w => (w[0]||"")).join("").slice(0,2).toUpperCase();
-              const badgeClass = f.status === "C" ? "badge-green" : "badge-amber";
-              const badgeText = f.status === "C" ? "Confirmed" : "Pending";
-              return '<div class="ft-row"><div class="ft-avatar">' + initials + '</div><div style="flex:1"><div class="ft-name">' + f.name + '</div><div class="ft-meta">' + (f.serviceTime || '') + '</div></div><span class="badge ' + badgeClass + '">' + badgeText + '</span></div>';
-            }).join("") +
-          '</div>' : '') +
+      const roomColHeaders = roomServiceKeys.map(st => `<th class="num">${st}</th>`).join("");
+      const roomRows = allRooms.map(room => {
+        const cells = roomServiceKeys.map(st => { const v = ((roomBreakdown[st] || {})[room] || [])[li] || 0; return `<td class="num">${v > 0 ? fmt(v) : "—"}</td>`; }).join("");
+        const rowTotal = roomServiceKeys.reduce((s, st) => s + (((roomBreakdown[st] || {})[room] || [])[li] || 0), 0);
+        return `<tr><td>${room}</td>${cells}<td class="num" style="font-weight:700">${fmt(rowTotal)}</td></tr>`;
+      }).join("");
+      const roomTotalCells = roomServiceKeys.map(st => { const c = allRooms.reduce((s, room) => s + (((roomBreakdown[st] || {})[room] || [])[li] || 0), 0); return `<td class="num">${fmt(c)}</td>`; }).join("");
 
-        // ── Footer
-        '<div class="footer">Generated ' + now.toLocaleString("en-US", { timeZone: "America/Chicago" }) + ' CT · City Church Chicago · <a href="/" style="color:#5AAEE0">Open Dashboard</a></div>' +
+      const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Weekly Report — ${sundayLabel}</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>${css}</style></head><body><div class="page">
 
-        '</div></body></html>';
+<div class="header">
+  <div class="header-left">
+    <img src="/logo.png" class="header-logo" alt="CCC">
+    <div><h1>Weekly Leadership Report</h1><div class="header-date">${reportDate}</div></div>
+  </div>
+  <div class="header-right">City Church Chicago<br>${sundayLabel}</div>
+</div>
+
+<div class="kpi-grid">
+  <div class="kpi"><div class="kpi-label">Total Attendance</div><div class="kpi-value">${fmt(attTotal)}</div><div class="kpi-sub">${deltaHtml(attTotal, attPrev)} vs prior week</div></div>
+  <div class="kpi"><div class="kpi-label">City Kids</div><div class="kpi-value">${fmt(kidsTotal)}</div><div class="kpi-sub">${deltaHtml(kidsTotal, kidsPrev)} vs prior week</div></div>
+  <div class="kpi"><div class="kpi-label">Decisions</div><div class="kpi-value">${fmt(decisions)}</div><div class="kpi-sub">${deltaHtml(decisions, decPrev)} vs prior week</div></div>
+  <div class="kpi"><div class="kpi-label">Volunteers</div><div class="kpi-value">${fmt(volUnique)}</div><div class="kpi-sub">${deltaHtml(volUnique, volPrev)} vs prior week</div></div>
+  <div class="kpi"><div class="kpi-label">New Families</div><div class="kpi-value">${fmt(newFamCurr)}</div><div class="kpi-sub">${deltaHtml(newFamCurr, newFamPrev)} vs prior week</div></div>
+</div>
+
+<div class="section">
+  <div class="section-title"><div class="dot" style="background:#2563eb"></div>Attendance by Service</div>
+  <table>
+    <thead><tr><th>Service</th><th class="num">Count</th><th class="pct">% of Total</th></tr></thead>
+    <tbody>
+      ${attServiceRows}
+      <tr class="total-row"><td>Total</td><td class="num">${fmt(attTotal)}</td><td class="pct">100%</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="section">
+  <div class="section-title"><div class="dot" style="background:#16a34a"></div>City Kids Check-Ins by Service</div>
+  <table>
+    <thead><tr><th>Service</th><th class="num">Check-Ins</th><th class="pct">% of Total</th></tr></thead>
+    <tbody>
+      ${kidsServiceRows}
+      <tr class="total-row"><td>Total</td><td class="num">${fmt(kidsTotalFromRooms)}</td><td class="pct">100%</td></tr>
+    </tbody>
+  </table>
+</div>
+
+${allRooms.length > 0 ? `
+<div class="section">
+  <div class="section-title"><div class="dot" style="background:#16a34a"></div>City Kids Room Breakdown</div>
+  <table>
+    <thead><tr><th>Room</th>${roomColHeaders}<th class="num">Total</th></tr></thead>
+    <tbody>
+      ${roomRows}
+      <tr class="total-row"><td>Total</td>${roomTotalCells}<td class="num">${fmt(kidsTotalFromRooms)}</td></tr>
+    </tbody>
+  </table>
+</div>` : ""}
+
+${volTeamNames.length > 0 ? `
+<div class="section">
+  <div class="section-title"><div class="dot" style="background:#7c3aed"></div>Volunteers by Team &amp; Service</div>
+  <table>
+    <thead><tr><th>Team</th>${volTeamColHeaders}<th class="num">Total</th></tr></thead>
+    <tbody>
+      ${volTeamRows}
+      <tr class="total-row"><td>Total</td>${volTotalCells}<td class="num">${volGrandTotal > 0 ? volGrandTotal : "—"}</td></tr>
+    </tbody>
+  </table>
+</div>` : ""}
+
+${ftNames.length > 0 ? `
+<div class="section">
+  <div class="section-title"><div class="dot" style="background:#7c3aed"></div>New Volunteers <span style="font-size:13px;font-weight:500;color:#6b7280;margin-left:4px">(${ftNames.length})</span></div>
+  ${ftNames.map(f => {
+    const ini = initials(f.name);
+    const badgeClass = f.status === "C" ? "badge-green" : "badge-amber";
+    const badgeText = f.status === "C" ? "Confirmed" : "Pending";
+    return `<div class="person-row"><div class="avatar" style="background:#f0e6ff;color:#7c3aed">${ini}</div><div style="flex:1"><div class="person-name">${f.name}</div><div class="person-meta">${f.serviceTime || ""}</div></div><span class="badge ${badgeClass}">${badgeText}</span></div>`;
+  }).join("")}
+</div>` : ""}
+
+<div class="footer">Generated ${now.toLocaleString("en-US", { timeZone: CHURCH_CONFIG.timezone })} CT &middot; City Church Chicago &middot; <a href="/" style="color:#5AAEE0">Open Dashboard</a></div>
+
+</div></body></html>`;
 
       res.writeHead(200, { "Content-Type": "text/html" });
       res.end(html);
     } catch(e) {
       res.writeHead(500, { "Content-Type": "text/plain" });
       res.end("Error generating report: " + e.message);
+    }
+    return;
+  }
+
+  // ── Easter Report (static snapshot of April 5, 2026) ─────────────────────────
+  if (req.method === "GET" && parsed.pathname === "/easter-report") {
+    if (!savedCreds) { res.writeHead(401); return res.end("Not authenticated — open the dashboard first and enter credentials."); }
+    try {
+      // Always fetch data covering Easter Sunday (April 5, 2026) regardless of current date.
+      const EASTER_DATE = new Date("2026-04-05T12:00:00");  // local noon
+      const msPerWeek = 7 * 24 * 60 * 60 * 1000;
+      const easterWeeksAgo = Math.max(2, Math.min(12, Math.ceil((Date.now() - EASTER_DATE.getTime()) / msPerWeek) + 1));
+      const CACHE_TTL = 30 * 60 * 1000;
+      const cacheKey = "easter_" + easterWeeksAgo;
+      let De = dataCache[cacheKey] && (Date.now() - dataCache[cacheKey].ts < CACHE_TTL) ? dataCache[cacheKey].payload : null;
+      if (!De) { De = await buildData(easterWeeksAgo); dataCache[cacheKey] = { ts: Date.now(), payload: De }; }
+
+      // Find the bucket index that contains April 5, 2026
+      const { buckets: easterBuckets } = buildTimeBuckets(easterWeeksAgo);
+      const easterIdx = bucketIndexFor(EASTER_DATE, easterBuckets);
+      const ei = easterIdx >= 0 ? easterIdx : De.labels.length - 1;  // fallback to latest
+
+      const fmt = n => (n || 0).toLocaleString();
+      const pct = (n, tot) => tot > 0 ? Math.round((n / tot) * 100) : 0;
+      const now = new Date();
+
+      // ── Metrics (all from Easter week bucket) ──
+      const attTotal    = De.attendance[ei] || 0;
+      const decisions   = (De.decisions || [])[ei] || 0;
+      const kidsTotal   = (De.kidsAttendance || [])[ei] || 0;
+      const volUnique   = (De.uniqueVolunteers || [])[ei] || 0;
+      const multiServers = (De.weeklyMultiServers || [])[ei] || [];
+
+      const CURRENT_SERVICES = new Set(["8:30 AM", "10:00 AM", "11:30 AM", "1:00 PM"]);
+      const sortTimes = keys => keys.slice().sort((a, b) => {
+        const pa = Date.parse("2000-01-01 " + a), pb = Date.parse("2000-01-01 " + b);
+        return (isNaN(pa) ? 9999 : pa) - (isNaN(pb) ? 9999 : pb);
+      });
+
+      const attByService = De.attendanceByService || {};
+      const attServiceKeys = sortTimes(Object.keys(attByService).filter(k => CURRENT_SERVICES.has(k)));
+
+      const roomBreakdown = De.kidsRoomBreakdown || {};
+      const roomServiceKeys = sortTimes(Object.keys(roomBreakdown).filter(k => CURRENT_SERVICES.has(k)));
+      const allRooms = [...new Set(roomServiceKeys.flatMap(st => Object.keys(roomBreakdown[st] || {})))].sort();
+      const kidsServiceKeys = roomServiceKeys;
+      const kidsByServiceFromRooms = {};
+      for (const st of kidsServiceKeys) {
+        kidsByServiceFromRooms[st] = allRooms.reduce((s, room) => s + (((roomBreakdown[st] || {})[room] || [])[ei] || 0), 0);
+      }
+      const kidsTotalFromRooms = kidsServiceKeys.reduce((s, st) => s + kidsByServiceFromRooms[st], 0);
+
+      // Use per-week volunteer breakdown for Easter week specifically
+      const volByTeam = (De.teamByServiceTimeCountByWeek ? De.teamByServiceTimeCountByWeek[ei] : De.teamByServiceTimeCount) || {};
+      const volTeamNames = Object.keys(volByTeam)
+        .filter(tn => [...CURRENT_SERVICES].some(st => (volByTeam[tn][st] || 0) > 0))
+        .sort((a, b) => {
+          const totA = [...CURRENT_SERVICES].reduce((s, st) => s + (volByTeam[a][st] || 0), 0);
+          const totB = [...CURRENT_SERVICES].reduce((s, st) => s + (volByTeam[b][st] || 0), 0);
+          return totB - totA;
+        });
+      const volServiceCols = sortTimes([...CURRENT_SERVICES]);
+      const volTeamColHeaders = volServiceCols.map(st => `<th class="num">${st}</th>`).join("");
+      const volTeamRows = volTeamNames.map(tn => {
+        const cells = volServiceCols.map(st => { const v = (volByTeam[tn] || {})[st] || 0; return `<td class="num">${v > 0 ? v : "—"}</td>`; }).join("");
+        const rowTotal = volServiceCols.reduce((s, st) => s + ((volByTeam[tn] || {})[st] || 0), 0);
+        return `<tr><td>${tn}</td>${cells}<td class="num" style="font-weight:700">${rowTotal}</td></tr>`;
+      }).join("");
+      const volTotalCells = volServiceCols.map(st => { const c = volTeamNames.reduce((s, tn) => s + ((volByTeam[tn] || {})[st] || 0), 0); return `<td class="num">${c > 0 ? c : "—"}</td>`; }).join("");
+      const volGrandTotal = volServiceCols.reduce((s, st) => s + volTeamNames.reduce((ss, tn) => ss + ((volByTeam[tn] || {})[st] || 0), 0), 0);
+
+      const attServiceRows = attServiceKeys.map(svc => {
+        const count = (attByService[svc] || [])[ei] || 0;
+        return `<tr><td>${svc}</td><td class="num">${fmt(count)}</td><td class="pct">${pct(count, attTotal)}%</td></tr>`;
+      }).join("");
+      const kidsServiceRows = kidsServiceKeys.map(svc => {
+        const count = kidsByServiceFromRooms[svc] || 0;
+        return `<tr><td>${svc}</td><td class="num">${fmt(count)}</td><td class="pct">${pct(count, kidsTotalFromRooms)}%</td></tr>`;
+      }).join("");
+      const roomColHeaders = roomServiceKeys.map(st => `<th class="num">${st}</th>`).join("");
+      const roomRows = allRooms.map(room => {
+        const cells = roomServiceKeys.map(st => { const v = ((roomBreakdown[st] || {})[room] || [])[ei] || 0; return `<td class="num">${v > 0 ? fmt(v) : "—"}</td>`; }).join("");
+        const rowTotal = roomServiceKeys.reduce((s, st) => s + (((roomBreakdown[st] || {})[room] || [])[ei] || 0), 0);
+        return `<tr><td>${room}</td>${cells}<td class="num" style="font-weight:700">${fmt(rowTotal)}</td></tr>`;
+      }).join("");
+      const roomTotalCells = roomServiceKeys.map(st => { const c = allRooms.reduce((s, room) => s + (((roomBreakdown[st] || {})[room] || [])[ei] || 0), 0); return `<td class="num">${fmt(c)}</td>`; }).join("");
+
+      const css = `
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{font-family:"DM Sans",sans-serif;background:#f8f9fa;color:#1a1a2e;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+        .page{max-width:840px;margin:0 auto;background:#fff;min-height:100vh}
+        .header{background:linear-gradient(135deg,#1a1a2e 0%,#2d2d44 100%);color:#fff;padding:32px 40px;display:flex;align-items:center;justify-content:space-between}
+        .header-left{display:flex;align-items:center;gap:16px}
+        .header-logo{width:44px;height:44px;border-radius:10px;object-fit:contain}
+        .header h1{font-size:22px;font-weight:700;letter-spacing:-.02em}
+        .header-date{font-size:13px;opacity:.7;margin-top:2px}
+        .header-right{text-align:right;font-size:12px;opacity:.6;line-height:1.6}
+        .kpi-grid{display:grid;grid-template-columns:repeat(5,1fr);border-bottom:1px solid #e5e7eb}
+        .kpi{padding:14px 12px;border-right:1px solid #e5e7eb;text-align:center}
+        .kpi:last-child{border-right:none}
+        .kpi-value{font-size:26px;font-weight:700;letter-spacing:-.03em;line-height:1}
+        .kpi-label{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#6b7280;margin-bottom:6px;font-weight:600}
+        .kpi-sub{font-size:12px;margin-top:6px;color:#6b7280}
+        .section{padding:24px 40px;border-bottom:1px solid #e5e7eb}
+        .section:last-of-type{border-bottom:none}
+        .section-title{font-size:15px;font-weight:700;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+        .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+        table{width:100%;border-collapse:collapse;font-size:13px}
+        th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#6b7280;font-weight:600;padding:6px 10px;border-bottom:2px solid #e5e7eb}
+        td{padding:8px 10px;border-bottom:1px solid #f3f4f6;color:#1a1a2e}
+        tr:last-child td{border-bottom:none}
+        .num{text-align:right;font-weight:600;font-variant-numeric:tabular-nums}
+        .pct{text-align:right;color:#6b7280;font-size:12px}
+        .total-row td{font-weight:700;border-top:2px solid #e5e7eb;border-bottom:none;background:#f9fafb}
+        .footer{padding:20px 40px;text-align:center;font-size:11px;color:#9ca3af;border-top:1px solid #e5e7eb}
+        @media print{body{background:#fff}.page{box-shadow:none}.header{-webkit-print-color-adjust:exact}}
+        @media(max-width:640px){.kpi-grid{grid-template-columns:repeat(2,1fr)}.kpi:nth-child(2n){border-right:none}.header{flex-direction:column;gap:12px}.section{padding:20px 24px}}
+      `;
+
+      const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Easter Report — April 5, 2026</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>${css}</style></head><body><div class="page">
+
+<div class="header">
+  <div class="header-left">
+    <img src="/logo.png" class="header-logo" alt="CCC">
+    <div><h1>Easter Sunday Report</h1><div class="header-date">Sunday, April 5, 2026</div></div>
+  </div>
+  <div class="header-right">City Church Chicago<br>April 5, 2026</div>
+</div>
+
+<div class="kpi-grid">
+  <div class="kpi"><div class="kpi-label">Total Attendance</div><div class="kpi-value">${fmt(attTotal)}</div></div>
+  <div class="kpi"><div class="kpi-label">City Kids</div><div class="kpi-value">${fmt(kidsTotal)}</div></div>
+  <div class="kpi"><div class="kpi-label">Decisions</div><div class="kpi-value">${fmt(decisions)}</div></div>
+  <div class="kpi"><div class="kpi-label">Volunteers</div><div class="kpi-value">${fmt(volUnique)}</div></div>
+  <div class="kpi"><div class="kpi-label">Multi-Service Vols</div><div class="kpi-value">${fmt(multiServers.length)}</div></div>
+</div>
+
+<div class="section">
+  <div class="section-title"><div class="dot" style="background:#2563eb"></div>Attendance by Service</div>
+  <table>
+    <thead><tr><th>Service</th><th class="num">Count</th><th class="pct">% of Total</th></tr></thead>
+    <tbody>
+      ${attServiceRows}
+      <tr class="total-row"><td>Total</td><td class="num">${fmt(attTotal)}</td><td class="pct">100%</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="section">
+  <div class="section-title"><div class="dot" style="background:#16a34a"></div>City Kids Check-Ins by Service</div>
+  <table>
+    <thead><tr><th>Service</th><th class="num">Check-Ins</th><th class="pct">% of Total</th></tr></thead>
+    <tbody>
+      ${kidsServiceRows}
+      <tr class="total-row"><td>Total</td><td class="num">${fmt(kidsTotalFromRooms)}</td><td class="pct">100%</td></tr>
+    </tbody>
+  </table>
+</div>
+
+${allRooms.length > 0 ? `
+<div class="section">
+  <div class="section-title"><div class="dot" style="background:#16a34a"></div>City Kids Room Breakdown</div>
+  <table>
+    <thead><tr><th>Room</th>${roomColHeaders}<th class="num">Total</th></tr></thead>
+    <tbody>
+      ${roomRows}
+      <tr class="total-row"><td>Total</td>${roomTotalCells}<td class="num">${fmt(kidsTotalFromRooms)}</td></tr>
+    </tbody>
+  </table>
+</div>` : ""}
+
+${volTeamNames.length > 0 ? `
+<div class="section">
+  <div class="section-title"><div class="dot" style="background:#7c3aed"></div>Volunteers by Team &amp; Service</div>
+  <table>
+    <thead><tr><th>Team</th>${volTeamColHeaders}<th class="num">Total</th></tr></thead>
+    <tbody>
+      ${volTeamRows}
+      <tr class="total-row"><td>Total</td>${volTotalCells}<td class="num">${volGrandTotal > 0 ? volGrandTotal : "—"}</td></tr>
+    </tbody>
+  </table>
+</div>` : ""}
+
+<div class="footer">Generated ${now.toLocaleString("en-US", { timeZone: CHURCH_CONFIG.timezone })} CT &middot; City Church Chicago &middot; <a href="/" style="color:#5AAEE0">Open Dashboard</a></div>
+
+</div></body></html>`;
+
+      res.writeHead(200, { "Content-Type": "text/html" });
+      res.end(html);
+    } catch(e) {
+      res.writeHead(500, { "Content-Type": "text/plain" });
+      res.end("Error generating Easter report: " + e.message);
+    }
+    return;
+  }
+
+  // ── New Profiles Report (today's new PCO people + action source) ─────────────
+  if (req.method === "GET" && parsed.pathname === "/new-profiles-report") {
+    if (!savedCreds) { res.writeHead(401); return res.end("Not authenticated — open the dashboard first and enter credentials."); }
+    try {
+      const todayDateCT = new Date().toLocaleDateString("en-CA", { timeZone: CHURCH_CONFIG.timezone });
+      const sinceISO = todayDateCT + "T00:00:00-05:00";
+      const now = new Date();
+      const reportDate = now.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: CHURCH_CONFIG.timezone });
+
+      // 1. Fetch all people created today
+      const newPeople = [];
+      let npUrl = "/people/v2/people?where[created_at][gte]=" + encodeURIComponent(sinceISO) + "&order=-created_at&per_page=100&fields[Person]=first_name,last_name,created_at";
+      while (npUrl) {
+        const r = await pcoFetch(npUrl);
+        if (r.status !== 200) break;
+        for (const p of (r.body && r.body.data) || []) {
+          const a = p.attributes || {};
+          newPeople.push({ id: p.id, name: ((a.first_name || "") + " " + (a.last_name || "")).trim(), createdAt: a.created_at || "" });
+        }
+        const next = r.body && r.body.links && r.body.links.next;
+        npUrl = next ? (new URL(next)).pathname + (new URL(next)).search : null;
+      }
+
+      // 2. Collect person IDs from check-ins created today
+      const checkInPersonIds = new Set();
+      let ciUrl = "/check-ins/v2/check_ins?where[created_at][gte]=" + encodeURIComponent(sinceISO) + "&per_page=100";
+      let ciPages = 0;
+      while (ciUrl && ciPages < 20) {
+        const r = await pcoFetch(ciUrl);
+        if (r.status !== 200) break;
+        for (const ci of (r.body && r.body.data) || []) {
+          const pid = ci.relationships && ci.relationships.person && ci.relationships.person.data && ci.relationships.person.data.id;
+          if (pid) checkInPersonIds.add(pid);
+        }
+        const next = r.body && r.body.links && r.body.links.next;
+        ciUrl = next ? (new URL(next)).pathname + (new URL(next)).search : null;
+        ciPages++;
+      }
+
+      // 3. Collect person IDs from group memberships joined today (any group type)
+      const groupSignupPersonIds = new Set();
+      const groupSignupNames = {};  // personId → group name
+      let lgUrl2 = "/groups/v2/memberships?include=group&order=-joined_at&per_page=100";
+      let lgPages = 0;
+      while (lgUrl2 && lgPages < 10) {
+        const r = await pcoFetch(lgUrl2);
+        if (r.status !== 200) break;
+        const members  = (r.body && r.body.data)     || [];
+        const included = (r.body && r.body.included) || [];
+        const groupNameMap = {};
+        for (const inc of included) {
+          if (inc.type === "Group") groupNameMap[inc.id] = (inc.attributes && inc.attributes.name) || "Group";
+        }
+        let pastToday = false;
+        for (const m of members) {
+          const joinedDate = ((m.attributes && m.attributes.joined_at) || "").slice(0, 10);
+          if (joinedDate < todayDateCT) { pastToday = true; break; }
+          const pid = m.relationships && m.relationships.person && m.relationships.person.data && m.relationships.person.data.id;
+          const gid = m.relationships && m.relationships.group    && m.relationships.group.data    && m.relationships.group.data.id;
+          if (pid) { groupSignupPersonIds.add(pid); groupSignupNames[pid] = groupNameMap[gid] || "Group"; }
+        }
+        if (pastToday || members.length === 0) break;
+        const next = r.body && r.body.links && r.body.links.next;
+        lgUrl2 = next ? (new URL(next)).pathname + (new URL(next)).search : null;
+        lgPages++;
+      }
+
+      // 4. Tag each person with their inferred source
+      const tagged = newPeople.map(p => {
+        const timeStr = p.createdAt ? new Date(p.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: CHURCH_CONFIG.timezone }) : "—";
+        let source = "New Profile";
+        let sourceColor = "#6b7280";
+        let sourceBg = "#f3f4f6";
+        if (checkInPersonIds.has(p.id) && groupSignupPersonIds.has(p.id)) {
+          source = "Check-In + Group Sign-Up";
+          sourceColor = "#7c3aed"; sourceBg = "#f0e6ff";
+        } else if (checkInPersonIds.has(p.id)) {
+          source = "Family Check-In";
+          sourceColor = "#2563eb"; sourceBg = "#dbeafe";
+        } else if (groupSignupPersonIds.has(p.id)) {
+          source = "Group Sign-Up — " + (groupSignupNames[p.id] || "");
+          sourceColor = "#16a34a"; sourceBg = "#dcfce7";
+        }
+        return { ...p, timeStr, source, sourceColor, sourceBg };
+      });
+
+      const initials = name => (name || "?").split(" ").map(w => w[0] || "").join("").slice(0, 2).toUpperCase();
+
+      const rows = tagged.length > 0
+        ? tagged.map(p =>
+            `<tr>
+              <td style="display:flex;align-items:center;gap:10px;padding:10px 16px">
+                <div style="width:32px;height:32px;border-radius:8px;background:#f3f4f6;color:#374151;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">${initials(p.name)}</div>
+                <span style="font-weight:600;font-size:13px">${p.name || "Unknown"}</span>
+              </td>
+              <td style="padding:10px 16px;font-size:12px;color:#6b7280">${p.timeStr}</td>
+              <td style="padding:10px 16px">
+                <span style="display:inline-block;padding:3px 10px;border-radius:99px;font-size:11px;font-weight:600;background:${p.sourceBg};color:${p.sourceColor}">${p.source}</span>
+              </td>
+            </tr>`
+          ).join("")
+        : `<tr><td colspan="3" style="padding:24px;text-align:center;color:#9ca3af;font-style:italic">No new profiles found today</td></tr>`;
+
+      const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>New Profiles — ${todayDateCT}</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:"DM Sans",sans-serif;background:#f8f9fa;color:#1a1a2e}
+  .page{max-width:840px;margin:0 auto;background:#fff;min-height:100vh}
+  .header{background:linear-gradient(135deg,#1a1a2e 0%,#2d2d44 100%);color:#fff;padding:28px 40px;display:flex;align-items:center;justify-content:space-between}
+  .header-left{display:flex;align-items:center;gap:16px}
+  .header-logo{width:40px;height:40px;border-radius:10px;object-fit:contain}
+  .header h1{font-size:20px;font-weight:700;letter-spacing:-.02em}
+  .header-date{font-size:12px;opacity:.7;margin-top:2px}
+  .header-right{text-align:right;font-size:12px;opacity:.6}
+  .summary{padding:16px 40px;background:#f9fafb;border-bottom:1px solid #e5e7eb;font-size:13px;color:#6b7280}
+  .summary strong{color:#1a1a2e}
+  table{width:100%;border-collapse:collapse}
+  thead th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#6b7280;font-weight:600;padding:8px 16px;border-bottom:2px solid #e5e7eb;text-align:left;background:#f9fafb}
+  tbody tr{border-bottom:1px solid #f3f4f6}
+  tbody tr:last-child{border-bottom:none}
+  tbody tr:hover{background:#f9fafb}
+  .footer{padding:20px 40px;text-align:center;font-size:11px;color:#9ca3af;border-top:1px solid #e5e7eb}
+  @media print{body{background:#fff}.page{box-shadow:none}}
+</style></head><body><div class="page">
+<div class="header">
+  <div class="header-left">
+    <img src="/logo.png" class="header-logo" alt="CCC">
+    <div><h1>New Church Center Profiles</h1><div class="header-date">${reportDate}</div></div>
+  </div>
+  <div class="header-right">City Church Chicago<br>${tagged.length} new profile${tagged.length !== 1 ? "s" : ""} today</div>
+</div>
+<div class="summary">
+  Sources detected: <strong>${tagged.filter(p => p.source.startsWith("Family")).length}</strong> check-in &nbsp;·&nbsp;
+  <strong>${tagged.filter(p => p.source.startsWith("Group")).length}</strong> group sign-up &nbsp;·&nbsp;
+  <strong>${tagged.filter(p => p.source === "New Profile").length}</strong> direct profile &nbsp;·&nbsp;
+  <strong>${tagged.filter(p => p.source.startsWith("Check-In +")).length}</strong> both
+</div>
+<table>
+  <thead><tr><th>Name</th><th>Time Created</th><th>Source</th></tr></thead>
+  <tbody>${rows}</tbody>
+</table>
+<div class="footer">Generated ${now.toLocaleString("en-US", { timeZone: CHURCH_CONFIG.timezone })} CT &middot; City Church Chicago &middot; <a href="/" style="color:#5AAEE0">Open Dashboard</a></div>
+</div></body></html>`;
+
+      res.writeHead(200, { "Content-Type": "text/html" });
+      res.end(html);
+    } catch(e) {
+      res.writeHead(500, { "Content-Type": "text/plain" });
+      res.end("Error generating new profiles report: " + e.message);
     }
     return;
   }

@@ -176,16 +176,21 @@ tr+tr td{border-top:1px solid var(--border);}
 .vd-stat{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;}
 .vd-stat-label{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.08em;font-weight:600;margin-bottom:4px;}
 .vd-stat-value{font-size:20px;font-weight:700;letter-spacing:-.02em;color:var(--text);}
-.vd-range-tabs{display:flex;gap:6px;margin-bottom:14px;}
+.vd-range-tabs{display:flex;gap:6px;margin-bottom:16px;}
 .vd-range-btn{background:var(--surface);border:1px solid var(--border);color:var(--muted);border-radius:7px;padding:5px 12px;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;font-weight:500;transition:all .15s;}
 .vd-range-btn:hover{color:var(--text);}
 .vd-range-btn.active{background:var(--brand-light);border-color:var(--brand);color:var(--brand-dark);font-weight:600;}
 .vd-section-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--muted2);margin-bottom:10px;}
-.vd-week-row{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);}
-.vd-week-label{width:70px;font-size:12px;color:var(--muted);flex-shrink:0;}
-.vd-bar-wrap{flex:1;height:8px;background:var(--surface);border-radius:99px;overflow:hidden;border:1px solid var(--border);}
-.vd-bar{height:100%;border-radius:99px;transition:width .4s ease;}
-.vd-bar-count{width:28px;text-align:right;font-size:12px;font-weight:600;font-family:'DM Mono',monospace;flex-shrink:0;}
+.vd-tab-bar{display:flex;gap:3px;background:var(--surface);border-radius:10px;padding:3px;margin-bottom:20px;border:1px solid var(--border);}
+.vd-tab{flex:1;background:none;border:none;border-radius:8px;padding:7px 12px;font-size:13px;font-weight:500;color:var(--muted);cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s;}
+.vd-tab:hover{color:var(--text);}
+.vd-tab.active{background:var(--card);color:var(--text);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.08);}
+.vd-dot-grid{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:20px;}
+.vd-dot{width:22px;height:22px;border-radius:5px;cursor:default;flex-shrink:0;transition:transform .1s;}
+.vd-dot:hover{transform:scale(1.2);}
+.vd-info-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);}
+.vd-info-label{font-size:12px;color:var(--muted);font-weight:500;}
+.vd-info-value{font-size:13px;color:var(--text);font-weight:600;text-align:right;}
 
 /* ── Error/loading ──────────────────────────────────────────────────────── */
 #error-banner{margin:16px 28px 0;background:#fff8f8;border:1px solid rgba(220,38,38,.2);border-radius:12px;padding:13px 18px;color:var(--red);display:none;}
@@ -241,7 +246,7 @@ input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(90,174,224,.15);
 <body>
 
 <!-- Connect modal -->
-<div class="overlay" id="modal-overlay">
+<div class="overlay" id="modal-overlay" style="display:none">
   <div class="modal-box">
     <h2>Connect to Planning Center</h2>
     <p>Enter your Personal Access Token credentials from <a href="https://api.planningcenteronline.com/oauth/applications" target="_blank">api.planningcenteronline.com</a> → <strong>Personal Access Tokens</strong> → Create one now.</p>
@@ -264,17 +269,34 @@ input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(90,174,224,.15);
       <button class="vd-close" onclick="closeVolDetail()">✕</button>
     </div>
     <div class="vd-stat-row" id="vd-stats"></div>
-    <div class="vd-range-tabs" id="vd-range-tabs"></div>
-    <div class="vd-section-title">Serve History</div>
-    <div id="vd-chart" style="margin-bottom:20px"></div>
-    <div class="vd-section-title">Weekly Breakdown</div>
-    <div id="vd-weeks"></div>
+    <div class="vd-tab-bar">
+      <button class="vd-tab active" id="vd-tab-activity" onclick="setVolDetailTab('activity')">Activity</button>
+      <button class="vd-tab" id="vd-tab-profile" onclick="setVolDetailTab('profile')">Profile</button>
+    </div>
+    <div id="vd-pane-activity">
+      <div class="vd-range-tabs" id="vd-range-tabs"></div>
+      <div class="vd-section-title">Serve History</div>
+      <div id="vd-dot-grid" class="vd-dot-grid"></div>
+      <div id="vd-dot-legend" style="display:flex;gap:14px;font-size:11px;color:var(--muted);margin-bottom:20px">
+        <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--green);margin-right:4px"></span>Served</span>
+        <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--red);opacity:.6;margin-right:4px"></span>Scheduled, didn't serve</span>
+        <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--border);margin-right:4px"></span>Not scheduled</span>
+      </div>
+    </div>
+    <div id="vd-pane-profile" style="display:none">
+      <div id="vd-profile-content"></div>
+    </div>
   </div>
 </div>
 
 <!-- Life group detail side panel -->
 <div id="lg-detail-overlay" onclick="if(event.target===this)closeGroupDetail()" style="position:fixed;inset:0;background:rgba(0,0,0,.4);backdrop-filter:blur(4px);z-index:200;display:none;align-items:flex-start;justify-content:flex-end;">
   <div id="lg-detail-panel" style="background:var(--card);border-left:1px solid var(--border);width:min(560px,100vw);height:100vh;overflow-y:auto;padding:28px;position:relative;animation:slideIn .25s cubic-bezier(.4,0,.2,1);box-shadow:-8px 0 32px rgba(0,0,0,.1);"></div>
+</div>
+
+<!-- Life group person profile side panel -->
+<div id="lg-person-overlay" onclick="maybeCloseLgPerson(event)" style="position:fixed;inset:0;background:rgba(0,0,0,.4);backdrop-filter:blur(4px);z-index:200;display:none;align-items:flex-start;justify-content:flex-end;">
+  <div id="lg-person-panel" style="background:var(--card);border-left:1px solid var(--border);width:min(520px,100vw);height:100vh;overflow-y:auto;padding:28px;position:relative;animation:slideIn .25s cubic-bezier(.4,0,.2,1);box-shadow:-8px 0 32px rgba(0,0,0,.1);"></div>
 </div>
 
 <!-- Team detail side panel -->
@@ -332,6 +354,12 @@ input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(90,174,224,.15);
       <a href="/report" target="_blank" class="nav-item" style="text-decoration:none">
         <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></span> Weekly Report
       </a>
+      <a href="/easter-report" target="_blank" class="nav-item" style="text-decoration:none">
+        <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></span> Easter Report
+      </a>
+      <a href="/new-profiles-report" target="_blank" class="nav-item" style="text-decoration:none">
+        <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/></svg></span> New Profiles Today
+      </a>
     </nav>
     <div class="sidebar-footer">
       <div class="sidebar-church-badge">
@@ -351,7 +379,6 @@ input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(90,174,224,.15);
       <div id="topbar-right">
         <div id="demo-badge">⚠ Demo</div>
         <button class="btn-sm" id="btn-refresh" onclick="refreshData()" style="display:none">↻ Refresh</button>
-        <button class="btn-sm" onclick="openModal()">⚙ Settings</button>
       </div>
     </header>
     <div id="main-scroll">
@@ -373,7 +400,7 @@ input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(90,174,224,.15);
 </div>
 
 <script>
-var D=null, activeTab='overview', isDemo=false, selectedMultiWeek=null, selectedKidsMultiWeek=null, selectedNewFamilyWeek=null, volListExpanded=false, currentWeeks=4;
+var D=null, activeTab='overview', isDemo=false, selectedMultiWeek=null, selectedKidsMultiWeek=null, selectedNewFamilyWeek=null, volListExpanded=false, currentWeeks=8;
 var ftAssignments={};
 // Shadow team options for first-time volunteers
 var SHADOW_TEAMS=['Outdoor','Auditorium','City Kids','Connect Bar','Production','Worship','Parking','Prayer','First Impressions','Security','Social Media','Other'];
@@ -469,27 +496,29 @@ function generateMockData(){
     return result;
   });
   var uniqueVolunteers=scheduled.map(function(s){return Math.floor(s*0.75+Math.random()*5);});
-  // Generate mock service-time breakdown
-  var attendanceByService={'9:00 AM':[],'10:30 AM':[],'12:30 PM':[]};
+  // Generate mock service-time breakdown (4-service schedule)
+  var attendanceByService={'8:30 AM':[],'10:00 AM':[],'11:30 AM':[],'1:00 PM':[]};
   attendance.forEach(function(total){
-    var a9=Math.floor(total*0.35);var a10=Math.floor(total*0.40);var a12=total-a9-a10;
-    attendanceByService['9:00 AM'].push(a9);
-    attendanceByService['10:30 AM'].push(a10);
-    attendanceByService['12:30 PM'].push(a12);
+    var a1=Math.floor(total*0.20);var a2=Math.floor(total*0.30);var a3=Math.floor(total*0.30);var a4=total-a1-a2-a3;
+    attendanceByService['8:30 AM'].push(a1);
+    attendanceByService['10:00 AM'].push(a2);
+    attendanceByService['11:30 AM'].push(a3);
+    attendanceByService['1:00 PM'].push(a4);
   });
   var kidsAttendance=attendance.map(function(a){return Math.floor(a*0.18+Math.random()*20);});
   var decisions=attendance.map(function(){return Math.floor(Math.random()*5);});
   // Mock City Kids data
   var kidsCheckinCounts=kidsAttendance.map(function(k){return Math.max(0,k-Math.floor(Math.random()*8));});
-  var kidsCheckinByService={'9:00 AM':[],'10:30 AM':[],'12:30 PM':[]};
+  var kidsCheckinByService={'8:30 AM':[],'10:00 AM':[],'11:30 AM':[],'1:00 PM':[]};
   kidsCheckinCounts.forEach(function(total){
-    var a9=Math.floor(total*0.2);var a10=Math.floor(total*0.45);var a12=total-a9-a10;
-    kidsCheckinByService['9:00 AM'].push(a9);
-    kidsCheckinByService['10:30 AM'].push(a10);
-    kidsCheckinByService['12:30 PM'].push(a12);
+    var a1=Math.floor(total*0.15);var a2=Math.floor(total*0.30);var a3=Math.floor(total*0.35);var a4=total-a1-a2-a3;
+    kidsCheckinByService['8:30 AM'].push(a1);
+    kidsCheckinByService['10:00 AM'].push(a2);
+    kidsCheckinByService['11:30 AM'].push(a3);
+    kidsCheckinByService['1:00 PM'].push(a4);
   });
   var kidsRoomBreakdown={};
-  ['9:00 AM','10:30 AM','12:30 PM'].forEach(function(svc){
+  ['8:30 AM','10:00 AM','11:30 AM','1:00 PM'].forEach(function(svc){
     kidsRoomBreakdown[svc]={};
     ['01 Crawlers','02 Walkers','03 Pre-K & K','04 Elem','05 J High'].forEach(function(room){
       kidsRoomBreakdown[svc][room]=labels.map(function(){return Math.floor(Math.random()*12+1);});
@@ -497,7 +526,7 @@ function generateMockData(){
   });
   var weeklyMultiServiceKids=labels.map(function(){
     var n=Math.floor(Math.random()*6)+2;var arr=[];
-    for(var i=0;i<n;i++)arr.push({name:'Kid '+(i+1),serviceCount:2,services:['9:00 AM','10:30 AM']});
+    for(var i=0;i<n;i++)arr.push({name:'Kid '+(i+1),serviceCount:2,services:['10:00 AM','11:30 AM']});
     return arr;
   });
   var uniqueKids=kidsCheckinCounts.map(function(c){return Math.max(0,c-Math.floor(Math.random()*8));});
@@ -560,7 +589,7 @@ async function refreshData(){
 
 async function loadLifeGroupsData(force){
   if(lgLoading)return;
-  if(LG&&!force)return;
+  if(LG&&!force){renderLifeGroupsTab();return;}
   lgLoading=true;
   renderLifeGroupsTab();
   try{
@@ -1296,6 +1325,9 @@ function renderLifeGroupsTab(){
   var currentSeason=LG.currentSeason||'';
   var seasonStatsMap=LG.seasonStats||{};
   var transitions=LG.seasonTransitions||[];
+  var activeDnrFrom=LG.activeDnrFrom||'';
+  var activeDnrTo=LG.activeDnrTo||'';
+  var activeDnrPeople=LG.activeDnrPeople||[];
 
   // Default to current season if not explicitly set
   if(!lgSelectedSeason||(lgSelectedSeason!=='all'&&seasons.indexOf(lgSelectedSeason)<0)){
@@ -1350,7 +1382,7 @@ function renderLifeGroupsTab(){
       var retColor=t.retentionRate>=70?'var(--green)':t.retentionRate>=40?'var(--amber)':'var(--red)';
       retentionHtml+='<div class="panel" style="margin-bottom:14px">'+
         '<div class="panel-title" style="--panel-dot:var(--teal)">Season Transition: '+esc(t.from)+' → '+esc(t.to)+'</div>'+
-        '<div class="panel-sub">Tracking how people carry over between seasons</div>'+
+        '<div class="panel-sub">'+(t.from===activeDnrFrom&&t.to===activeDnrTo?'Active window — tracking who from '+esc(t.from)+' hasn\'t yet signed up for '+esc(t.to):'Historical retention data')+'</div>'+
         '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">'+
           '<div class="vd-stat"><div class="vd-stat-label">Retention</div><div class="vd-stat-value" style="color:'+retColor+'">'+t.retentionRate+'%</div></div>'+
           '<div class="vd-stat"><div class="vd-stat-label">Returning</div><div class="vd-stat-value" style="color:var(--green)">'+t.returning+'</div></div>'+
@@ -1382,9 +1414,52 @@ function renderLifeGroupsTab(){
 
       retentionHtml+=collapsibleList('Returning',t.returningNames,'var(--green)','Returning');
       retentionHtml+=collapsibleList('New to Life Groups',t.newNames,'var(--accent)','New');
-      retentionHtml+=collapsibleList('Did Not Return',t.didNotReturnNames,'var(--red)','Lost');
       retentionHtml+='</div>';
     });
+  }
+
+  // ── Dedicated Did Not Return panel (month-precise, not season-broad) ────
+  // Only shows people from January groups who haven't joined April groups yet.
+  // Automatically shifts each month (Feb→May in April, Mar→Jun in May, etc.)
+  var dnrHtml='';
+  if(activeDnrPeople.length>0||(activeDnrFrom&&activeDnrTo)){
+    var dnrRows=activeDnrPeople.map(function(p){
+      var c=avatarColor(p.name);
+      var pg=p.prevGroups&&p.prevGroups[0]?p.prevGroups[0]:null;
+      var prevGroupTxt=pg?pg.name:'—';
+      var prevLeaderTxt=pg&&pg.leader?pg.leader:'—';
+      var extra=p.prevGroups&&p.prevGroups.length>1?' <span style="font-size:10px;color:var(--muted2)">+' + (p.prevGroups.length-1)+' more</span>':'';
+      var nameCell=p.id
+        ?'<div style="display:flex;align-items:center;gap:8px;cursor:pointer" onclick="openLgPersonProfile(\''+p.id+'\',\''+jsesc(p.name)+'\')">'+
+            '<div class="vol-avatar" style="background:'+c+'18;color:'+c+';border:1px solid '+c+'33;width:26px;height:26px;font-size:10px;flex-shrink:0">'+initials(p.name)+'</div>'+
+            '<span style="font-size:13px;color:var(--accent);font-weight:500;text-decoration:underline;text-underline-offset:2px">'+esc(p.name)+'</span>'+
+          '</div>'
+        :'<div style="display:flex;align-items:center;gap:8px">'+
+            '<div class="vol-avatar" style="background:'+c+'18;color:'+c+';border:1px solid '+c+'33;width:26px;height:26px;font-size:10px;flex-shrink:0">'+initials(p.name)+'</div>'+
+            '<span style="font-size:13px">'+esc(p.name)+'</span>'+
+          '</div>';
+      return'<tr style="border-bottom:1px solid var(--border)">'+
+        '<td style="padding:8px 10px">'+nameCell+'</td>'+
+        '<td style="padding:8px 10px;font-size:12px;color:var(--text)">'+esc(prevGroupTxt)+extra+'</td>'+
+        '<td style="padding:8px 10px;font-size:12px;color:var(--muted)">'+esc(prevLeaderTxt)+'</td>'+
+      '</tr>';
+    }).join('');
+    dnrHtml='<div class="panel" style="--panel-dot:var(--red)">'+
+      '<div class="panel-title">Did Not Return</div>'+
+      '<div class="panel-sub">'+esc(activeDnrFrom)+' group members who haven\'t signed up for a '+esc(activeDnrTo)+' group yet — '+activeDnrPeople.length+' people</div>'+
+      (activeDnrPeople.length===0
+        ? '<div style="color:var(--green);text-align:center;padding:20px;font-size:13px">Everyone from '+esc(activeDnrFrom)+' groups has signed up for '+esc(activeDnrTo)+' ✓</div>'
+        : '<div style="max-height:480px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;margin-top:12px">'+
+            '<table style="width:100%;border-collapse:collapse">'+
+              '<thead><tr style="background:var(--surface)">'+
+                '<th style="text-align:left;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;padding:8px 10px;border-bottom:2px solid var(--border)">Name</th>'+
+                '<th style="text-align:left;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;padding:8px 10px;border-bottom:2px solid var(--border)">Previous Group</th>'+
+                '<th style="text-align:left;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;padding:8px 10px;border-bottom:2px solid var(--border)">Previous Leader</th>'+
+              '</tr></thead>'+
+              '<tbody>'+dnrRows+'</tbody>'+
+            '</table>'+
+          '</div>')+
+    '</div>';
   }
 
   // Meeting day breakdown — filter by season
@@ -1556,7 +1631,7 @@ function renderLifeGroupsTab(){
     '</div>';
   }
 
-  el.innerHTML=seasonToggleHtml+statsHtml+retentionHtml+
+  el.innerHTML=seasonToggleHtml+statsHtml+dnrHtml+retentionHtml+
     '<div style="display:grid;grid-template-columns:280px 1fr;gap:14px;margin-bottom:14px;">'+
       dayBreakdownHtml+groupListHtml+
     '</div>'+
@@ -1623,6 +1698,12 @@ var chartLoading={};
 var rangeLabels={1:'Last Week',4:'4 Weeks',8:'8 Weeks',13:'3 Months',26:'6 Months',52:'1 Year'};
 // Service time colors for attendance breakdown
 var serviceTimeColors={
+  // Current 4-service schedule
+  '8:30 AM':'#60a5fa',
+  '10:00 AM':'var(--accent)',
+  '11:30 AM':'var(--green)',
+  '1:00 PM':'var(--purple)',
+  // Legacy service times (historical data)
   '9:00 AM':'var(--accent)',
   '10:30 AM':'var(--green)',
   '12:30 PM':'var(--purple)',
@@ -1650,10 +1731,10 @@ function initChartData(){
   chartDataSets.kidscheckins=D;
   chartDataSets.coverage=D;
   chartDataSets.rostertrend=D;
-  chartWeeks.attendance=1;  // Default attendance to Last Week
+  chartWeeks.attendance=4;
   chartWeeks.sched=currentWeeks;
-  chartWeeks.decisions=currentWeeks;
-  chartWeeks.volunteers=currentWeeks;
+  chartWeeks.decisions=4;
+  chartWeeks.volunteers=4;
   chartWeeks.firsttimers=currentWeeks;
   chartWeeks.kidscheckins=currentWeeks;
   chartWeeks.coverage=currentWeeks;
@@ -1834,8 +1915,10 @@ function maybeCloseDetail(e){if(e.target===$('detail-overlay'))closeDetail();}
 
 // ── Volunteer detail side panel ────────────────────────────────────────────────
 
+var volDetailTab='activity';
 function openVolDetail(v){
   currentVolDetail=v;
+  volDetailTab='activity';
   var color=avatarColor(v.name);
   // Avatar
   var av=$('vd-avatar');
@@ -1843,17 +1926,24 @@ function openVolDetail(v){
   av.textContent=initials(v.name);
   // Header
   $('vd-name').textContent=v.name;
-  $('vd-teams').textContent=v.teams.length?v.teams.join(' · '):'No team data';
-  // Stats — use week-level participation rate (showed up ≥1× that week) not slot fill rate
+  $('vd-teams').textContent=v.teams.filter(function(t){return t&&t!=='Other';}).join(' · ')||'No team data';
+  // Stats: weeks served, participation rate, weeks scheduled
+  var N=D.labels.length;
+  var weeksServed=v.confirmedByWeek.filter(function(c){return c>0;}).length;
+  var weeksScheduled=v.scheduledByWeek.filter(function(s){return s>0;}).length;
   var rate=participationRate(v);
-  var declined=v.declinedByWeek?v.declinedByWeek.reduce(function(s,x){return s+x;},0):0;
   var rc=rate>=80?'var(--green)':rate>=60?'var(--amber)':'var(--red)';
   $('vd-stats').innerHTML=
-    '<div class="vd-stat"><div class="vd-stat-label">Served</div><div class="vd-stat-value" style="color:'+color+'">'+v.totalConfirmed+'</div></div>'+
-    '<div class="vd-stat"><div class="vd-stat-label">Participation</div><div class="vd-stat-value" style="color:'+rc+'">'+rate+'%</div></div>'+
-    '<div class="vd-stat"><div class="vd-stat-label">Declined</div><div class="vd-stat-value" style="color:var(--muted)">'+declined+'</div></div>';
-  // Range tabs — determine available options from data length
-  var N=D.labels.length;
+    '<div class="vd-stat"><div class="vd-stat-label">Weeks Served</div><div class="vd-stat-value" style="color:'+color+'">'+weeksServed+'</div></div>'+
+    '<div class="vd-stat"><div class="vd-stat-label">Show-up Rate</div><div class="vd-stat-value" style="color:'+rc+'">'+rate+'%</div></div>'+
+    '<div class="vd-stat"><div class="vd-stat-label">Weeks Scheduled</div><div class="vd-stat-value">'+weeksScheduled+'</div></div>';
+  // Show activity tab, reset profile pane
+  $('vd-pane-activity').style.display='block';
+  $('vd-pane-profile').style.display='none';
+  $('vd-tab-activity').classList.add('active');
+  $('vd-tab-profile').classList.remove('active');
+  $('vd-profile-content').innerHTML='<div style="color:var(--muted);font-size:13px;text-align:center;padding:30px 0">Loading…</div>';
+  // Range tabs
   var ranges=[];
   if(N>=4)ranges.push({label:'1 mo',wks:4});
   if(N>=13)ranges.push({label:'3 mo',wks:13});
@@ -1861,25 +1951,88 @@ function openVolDetail(v){
   if(N>=52)ranges.push({label:'1 yr',wks:52});
   if(ranges.length===0)ranges.push({label:'All',wks:N});
   else ranges.push({label:'All',wks:N});
-  // Default: 3-month if available, else all
   var defaultRange=ranges.find(function(r){return r.wks===13;})||ranges[ranges.length-1];
   volDetailRange=defaultRange.wks;
   $('vd-range-tabs').innerHTML=ranges.map(function(r){
     return'<button class="vd-range-btn'+(r.wks===volDetailRange?' active':'')+'" onclick="setVolDetailRange('+r.wks+',this)">'+r.label+'</button>';
   }).join('');
-  renderVolDetailChart();
-  var overlay=$('vol-detail-overlay');
-  overlay.style.display='flex';
+  renderServeGrid();
+  $('vol-detail-overlay').style.display='flex';
+}
+
+function setVolDetailTab(tab){
+  volDetailTab=tab;
+  $('vd-tab-activity').classList.toggle('active',tab==='activity');
+  $('vd-tab-profile').classList.toggle('active',tab==='profile');
+  $('vd-pane-activity').style.display=tab==='activity'?'block':'none';
+  $('vd-pane-profile').style.display=tab==='profile'?'block':'none';
+  if(tab==='profile')loadVolPersonInfo();
+}
+
+async function loadVolPersonInfo(){
+  var v=currentVolDetail;
+  if(!v)return;
+  // Check if pid is a real PCO ID (numeric string) vs a name fallback
+  var pid=v.pid&&/^\d+$/.test(v.pid)?v.pid:null;
+  if(!pid){
+    $('vd-profile-content').innerHTML='<div style="color:var(--muted);font-size:13px;text-align:center;padding:30px 0">No PCO profile ID available for this volunteer.</div>';
+    return;
+  }
+  $('vd-profile-content').innerHTML='<div style="color:var(--muted);font-size:13px;text-align:center;padding:30px 0">Loading from Planning Center…</div>';
+  try{
+    var r=await fetch('/vol-person?id='+encodeURIComponent(pid));
+    var data=await r.json();
+    if(data.error){throw new Error(data.error);}
+    var rows='';
+    // Birthday + age
+    if(data.birthdate){
+      var bd=new Date(data.birthdate+'T12:00:00');
+      var age=Math.floor((Date.now()-bd.getTime())/(365.25*24*3600*1000));
+      var bdFmt=bd.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+      rows+='<div class="vd-info-row"><span class="vd-info-label">Birthday</span><span class="vd-info-value">'+esc(bdFmt)+' (age '+age+')</span></div>';
+    }
+    // Membership anniversary (when they became a member)
+    if(data.anniversary){
+      var an=new Date(data.anniversary+'T12:00:00');
+      var anFmt=an.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+      var yrs=Math.floor((Date.now()-an.getTime())/(365.25*24*3600*1000));
+      rows+='<div class="vd-info-row"><span class="vd-info-label">Member Since</span><span class="vd-info-value">'+esc(anFmt)+(yrs>0?' ('+yrs+' yr'+(yrs===1?'':'s')+')':'')+'</span></div>';
+    }
+    // How long in PCO (proxy for time at church)
+    if(data.createdAt){
+      var ca=new Date(data.createdAt);
+      var caFmt=ca.toLocaleDateString('en-US',{month:'long',year:'numeric'});
+      var caYrs=Math.floor((Date.now()-ca.getTime())/(365.25*24*3600*1000));
+      rows+='<div class="vd-info-row"><span class="vd-info-label">Added to PCO</span><span class="vd-info-value">'+esc(caFmt)+(caYrs>0?' ('+caYrs+' yr'+(caYrs===1?'':'s')+')':'')+'</span></div>';
+    }
+    // Membership type
+    if(data.membership){
+      rows+='<div class="vd-info-row"><span class="vd-info-label">Membership</span><span class="vd-info-value">'+esc(data.membership)+'</span></div>';
+    }
+    // Gender
+    if(data.gender&&data.gender!=='Unspecified'){
+      rows+='<div class="vd-info-row"><span class="vd-info-label">Gender</span><span class="vd-info-value">'+esc(data.gender)+'</span></div>';
+    }
+    // Custom field data (baptism, etc.)
+    if(data.fieldData&&data.fieldData.length){
+      data.fieldData.forEach(function(f){
+        rows+='<div class="vd-info-row"><span class="vd-info-label">'+esc(f.name)+'</span><span class="vd-info-value">'+esc(f.value)+'</span></div>';
+      });
+    }
+    $('vd-profile-content').innerHTML=rows||'<div style="color:var(--muted);font-size:13px;text-align:center;padding:30px 0">No additional profile data found in Planning Center.</div>';
+  }catch(e){
+    $('vd-profile-content').innerHTML='<div style="color:var(--red);font-size:13px;text-align:center;padding:20px 0">Could not load profile: '+esc(e.message)+'</div>';
+  }
 }
 
 function setVolDetailRange(wks,btn){
   volDetailRange=wks;
   document.querySelectorAll('.vd-range-btn').forEach(function(b){b.classList.remove('active');});
   btn.classList.add('active');
-  renderVolDetailChart();
+  renderServeGrid();
 }
 
-function renderVolDetailChart(){
+function renderServeGrid(){
   if(!currentVolDetail||!D)return;
   var v=currentVolDetail;
   var N=D.labels.length;
@@ -1889,53 +2042,17 @@ function renderVolDetailChart(){
   var confirmed=v.confirmedByWeek.slice(startIdx);
   var scheduled=v.scheduledByWeek.slice(startIdx);
   var color=avatarColor(v.name);
-  var maxVal=Math.max.apply(null,scheduled.concat([1]));
-  // Build mini bar chart
-  var bars=labels.map(function(lbl,i){
-    var schPct=maxVal>0?Math.round(scheduled[i]/maxVal*100):0;
-    var conPct=scheduled[i]>0?Math.round(confirmed[i]/scheduled[i]*100):0;
-    var barColor=confirmed[i]>0?color:'var(--border)';
-    return'<div class="vd-week-row">'+
-      '<div class="vd-week-label">'+esc(lbl)+'</div>'+
-      '<div class="vd-bar-wrap"><div class="vd-bar" style="width:'+schPct+'%;background:var(--border)"></div></div>'+
-      '<div class="vd-bar-wrap" style="position:relative;margin-left:-100%;"><div class="vd-bar" style="width:'+conPct+'%;background:'+barColor+'"></div></div>'+
-      '<div class="vd-bar-count" style="color:'+(confirmed[i]>0?color:'var(--muted2)')+'">'+confirmed[i]+'</div>'+
-    '</div>';
-  });
-  // Overlay bars: scheduled (dim) behind confirmed (bright)
-  var barRows=labels.map(function(lbl,i){
-    var schW=maxVal>0?Math.round(scheduled[i]/maxVal*100):0;
-    var conW=scheduled[i]>0?Math.round(confirmed[i]/scheduled[i]*schW):0;
+  var dots=labels.map(function(lbl,i){
     var served=confirmed[i]>0;
-    return'<div class="vd-week-row">'+
-      '<div class="vd-week-label">'+esc(lbl)+'</div>'+
-      '<div class="vd-bar-wrap" style="position:relative">'+
-        '<div class="vd-bar" style="width:'+schW+'%;background:var(--surface);border:1px solid var(--border);position:absolute;top:0;left:0;height:100%"></div>'+
-        '<div class="vd-bar" style="width:'+conW+'%;background:'+color+';position:relative;z-index:1"></div>'+
-      '</div>'+
-      '<div class="vd-bar-count" style="color:'+(served?color:'var(--muted2)')+'">'+
-        (confirmed[i]>0?confirmed[i]:(scheduled[i]>0?'—':'·'))+
-      '</div>'+
-    '</div>';
-  });
-  $('vd-chart').innerHTML=
-    '<div style="display:flex;gap:14px;margin-bottom:10px;font-size:11px;color:var(--muted)">'+
-      '<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:'+color+';margin-right:4px"></span>Confirmed</span>'+
-      '<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--surface);border:1px solid var(--border);margin-right:4px"></span>Scheduled</span>'+
-    '</div>'+barRows.join('');
-  // Week summary table
-  var weeksWithActivity=labels.map(function(lbl,i){return{lbl:lbl,con:confirmed[i],sch:scheduled[i]};}).filter(function(w){return w.sch>0;});
-  $('vd-weeks').innerHTML=weeksWithActivity.length?
-    weeksWithActivity.map(function(w){
-      var rate=w.sch?Math.round(w.con/w.sch*100):0;
-      var rc=rate>=80?'var(--green)':rate>=50?'var(--amber)':'var(--red)';
-      return'<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid rgba(29,35,64,.6)">'+
-        '<span style="font-size:13px;color:var(--muted)">'+esc(w.lbl)+'</span>'+
-        '<span style="font-size:13px;font-family:\'DM Mono\',monospace"><span style="color:'+color+';font-weight:700">'+w.con+'</span><span style="color:var(--muted2)"> / '+w.sch+'</span></span>'+
-        '<span class="pill" style="background:'+rc+'15;color:'+rc+';border:1px solid '+rc+'30">'+rate+'%</span>'+
-      '</div>';
-    }).join(''):
-    '<div style="color:var(--muted);font-size:13px;text-align:center;padding:20px 0">No scheduled activity in this period</div>';
+    var sched=scheduled[i]>0;
+    var bg,title;
+    if(served){bg=color;title=lbl+': Served';}
+    else if(sched){bg='var(--red)';title=lbl+': Scheduled — did not serve';}
+    else{bg='var(--border)';title=lbl+': Not scheduled';}
+    var opacity=served?'.9':sched?'.55':'.3';
+    return'<div class="vd-dot" style="background:'+bg+';opacity:'+opacity+'" title="'+esc(title)+'"></div>';
+  }).join('');
+  $('vd-dot-grid').innerHTML=dots;
 }
 
 function closeVolDetail(){
@@ -1943,6 +2060,70 @@ function closeVolDetail(){
   currentVolDetail=null;
 }
 function maybeCloseVolDetail(e){if(e.target===$('vol-detail-overlay'))closeVolDetail();}
+
+// ── Life group person profile panel ────────────────────────────────────────────
+function openLgPersonProfile(personId,personName){
+  var color=avatarColor(personName);
+  var history=LG&&LG.personGroupHistory&&LG.personGroupHistory[personId]||[];
+  // Group history by season
+  var bySeason={};
+  history.forEach(function(h){if(!bySeason[h.season])bySeason[h.season]=[];bySeason[h.season].push(h);});
+  var seasonOrder=["January\u2013March","April\u2013June","July\u2013September","October\u2013December"];
+  var historyHtml='<div style="margin-bottom:22px">'+
+    '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:12px">Life Group History</div>';
+  if(history.length>0){
+    var sortedSeasons=Object.keys(bySeason).sort(function(a,b){return seasonOrder.indexOf(a)-seasonOrder.indexOf(b);});
+    sortedSeasons.forEach(function(season){
+      var entries=bySeason[season];
+      historyHtml+='<div style="margin-bottom:12px">'+
+        '<div style="font-size:11px;color:var(--muted2);font-weight:600;margin-bottom:5px">'+esc(season)+'</div>';
+      entries.forEach(function(e){
+        historyHtml+='<div style="padding:10px 12px;background:var(--surface);border-radius:8px;border:1px solid var(--border);margin-bottom:4px">'+
+          '<div style="font-size:13px;font-weight:600;color:var(--text)">'+esc(e.groupName)+'</div>'+
+          (e.leader?'<div style="font-size:11px;color:var(--muted);margin-top:2px">Leader: '+esc(e.leader)+'</div>':'')+
+        '</div>';
+      });
+      historyHtml+='</div>';
+    });
+  }else{
+    historyHtml+='<div style="color:var(--muted);font-size:13px;padding:8px 0">No group history found</div>';
+  }
+  historyHtml+='</div>';
+  // Volunteer stats if available
+  var volHtml='';
+  if(D&&D.volunteerProfiles){
+    var vp=D.volunteerProfiles.find(function(v){return v.name===personName;});
+    if(vp){
+      var rate=participationRate(vp);
+      var rc=rate>=80?'var(--green)':rate>=60?'var(--amber)':'var(--red)';
+      var vpIdx=D.volunteerProfiles.indexOf(vp);
+      volHtml='<div style="margin-bottom:22px">'+
+        '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:12px">Volunteer Activity</div>'+
+        '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px">'+
+          '<div class="vd-stat"><div class="vd-stat-label">Served</div><div class="vd-stat-value" style="color:'+color+'">'+vp.totalConfirmed+'</div></div>'+
+          '<div class="vd-stat"><div class="vd-stat-label">Participation</div><div class="vd-stat-value" style="color:'+rc+'">'+rate+'%</div></div>'+
+          '<div class="vd-stat"><div class="vd-stat-label">Teams</div><div class="vd-stat-value">'+vp.teams.length+'</div></div>'+
+        '</div>'+
+        '<div style="font-size:12px;color:var(--muted);margin-bottom:10px">'+esc(vp.teams.join(' · '))+'</div>'+
+        '<button class="btn-sm" style="font-size:12px" onclick="closeLgPerson();setTimeout(function(){switchTab(\'volunteers\');setTimeout(function(){openVolDetail(D.volunteerProfiles['+vpIdx+'])},200);},100)">View full volunteer profile →</button>'+
+      '</div>';
+    }
+  }
+  var panel=$('lg-person-panel');
+  panel.innerHTML=
+    '<button onclick="closeLgPerson()" style="position:absolute;top:20px;right:20px;background:none;border:none;cursor:pointer;font-size:20px;color:var(--muted);width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:50%">✕</button>'+
+    '<div style="display:flex;align-items:center;gap:14px;margin-bottom:24px">'+
+      '<div class="vol-avatar" style="width:52px;height:52px;font-size:16px;background:'+color+'22;color:'+color+';border:2px solid '+color+'44">'+initials(personName)+'</div>'+
+      '<div>'+
+        '<div style="font-size:20px;font-weight:700;color:var(--text);letter-spacing:-.02em">'+esc(personName)+'</div>'+
+        '<div style="font-size:12px;color:var(--muted);margin-top:2px">Life Group Member</div>'+
+      '</div>'+
+    '</div>'+
+    historyHtml+volHtml;
+  $('lg-person-overlay').style.display='flex';
+}
+function closeLgPerson(){$('lg-person-overlay').style.display='none';}
+function maybeCloseLgPerson(e){if(e.target===$('lg-person-overlay'))closeLgPerson();}
 
 // ── Bar chart ──────────────────────────────────────────────────────────────────
 // opts: { fullWidth:bool, showValues:bool, showYAxis:bool }
@@ -2384,27 +2565,29 @@ function renderContent(){
     var currentMulti=D.weeklyMultiServers[selectedMultiWeek]||[];
     var multiRows=currentMulti.length>0
       ? currentMulti.map(function(v,i){
-          var assignments=(v.schedules||[]).map(function(s){
-            var team=s.team||'Volunteer';var time=s.serviceTime||'';
-            var line='<span style="color:var(--accent);font-weight:500">'+esc(team)+'</span>';
-            if(time)line+=' <span style="color:var(--muted)">@</span> <span style="color:var(--purple);font-weight:500">'+esc(time)+'</span>';
-            return line;
+          // Unique team names only — times already shown in their own column
+          var teamNames=[];var seenTeam={};
+          (v.schedules||[]).forEach(function(s){
+            var t=s.team||'Volunteer';
+            if(!seenTeam[t]){seenTeam[t]=true;teamNames.push(t);}
           });
-          var seen={};assignments=assignments.filter(function(a){if(seen[a])return false;seen[a]=true;return true;});
+          var teamBadges=teamNames.map(function(t){
+            return '<span style="display:inline-block;background:var(--accent)12;color:var(--accent);border:1px solid var(--accent)25;border-radius:6px;padding:2px 7px;font-size:11px;font-weight:500;margin:1px 2px 1px 0">'+esc(t)+'</span>';
+          }).join('');
           var times=(v.serviceTimes||[]).join(', ')||(v.schedules||[]).map(function(s){return s.serviceTime||'';}).filter(Boolean).join(', ')||'—';
           var vp=(D.volunteerProfiles||[]).find(function(p){return p.name===v.name;});
           var clickFn=vp?'openVolDetail(D.volunteerProfiles['+D.volunteerProfiles.indexOf(vp)+'])':'openDetail('+selectedMultiWeek+','+i+')';
           return'<tr class="crow" onclick="'+clickFn+'">'+
-            '<td style="vertical-align:top;padding-right:12px">'+
+            '<td style="vertical-align:middle;padding-right:12px">'+
               '<div style="display:flex;align-items:center;gap:9px">'+
                 '<div style="width:28px;height:28px;border-radius:7px;background:'+avatarColor(v.name)+'22;color:'+avatarColor(v.name)+';display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">'+initials(v.name)+'</div>'+
                 '<span style="font-weight:600">'+esc(v.name)+'</span>'+
               '</div>'+
             '</td>'+
-            '<td style="color:var(--purple);font-size:12px;font-weight:600;white-space:nowrap;vertical-align:top;padding-right:12px">'+times+'</td>'+
-            '<td style="font-size:12px;line-height:1.6;vertical-align:top;padding-right:12px">'+assignments.join('<br/>')+'</td>'+
-            '<td style="vertical-align:top"><span class="pill" style="background:var(--purple)22;color:var(--purple);border:1px solid var(--purple)33">'+v.appearances+'×</span></td>'+
-            '<td style="color:var(--muted);font-size:12px;vertical-align:top">→</td>'+
+            '<td style="color:var(--purple);font-size:12px;font-weight:600;white-space:nowrap;vertical-align:middle;padding-right:12px">'+esc(times)+'</td>'+
+            '<td style="vertical-align:middle;padding-right:12px">'+teamBadges+'</td>'+
+            '<td style="vertical-align:middle"><span class="pill" style="background:var(--purple)22;color:var(--purple);border:1px solid var(--purple)33">'+v.appearances+'×</span></td>'+
+            '<td style="color:var(--muted);font-size:12px;vertical-align:middle">→</td>'+
           '</tr>';
         }).join('')
       : '<tr><td colspan="5" style="color:var(--muted);text-align:center;padding:20px 0">No multi-service volunteers this week</td></tr>';
@@ -2432,30 +2615,6 @@ function renderContent(){
         '</div>'+
       '</div>';
     }).join('');
-
-    // At-risk volunteers
-    var atRisk=D.atRiskVolunteers||[];
-    var atRiskHTML='';
-    if(atRisk.length>0){
-      atRiskHTML='<div class="alert-card">'+
-        '<div class="alert-card-header">'+
-          '<div class="alert-icon">!</div>'+
-          '<div><div class="alert-title">'+atRisk.length+' Volunteer'+(atRisk.length===1?'':'s')+' May Be Slipping Away</div>'+
-            '<div class="alert-sub">Served consistently in recent weeks but haven\'t shown up lately — worth a check-in</div></div>'+
-        '</div>'+
-        atRisk.map(function(v){
-          var vp=(D.volunteerProfiles||[]).find(function(p){return p.name===v.name;});
-          var clickFn=vp?'openVolDetail(D.volunteerProfiles['+D.volunteerProfiles.indexOf(vp)+'])':'';
-          return'<div class="alert-row"'+(clickFn?' onclick="'+clickFn+'"':'')+'>'+
-            '<div>'+
-              '<div class="alert-name">'+esc(v.name)+'</div>'+
-              '<div class="alert-meta">'+(v.teams&&v.teams.length?esc(v.teams[0])+' · ':'')+'Last served: '+(v.lastServeLabel?esc(v.lastServeLabel):'unknown')+'</div>'+
-            '</div>'+
-            '<div class="alert-badge">'+v.priorServes+'× in prior '+v.weeksMissing*3+'wks</div>'+
-          '</div>';
-        }).join('')+
-      '</div>';
-    }
 
     // First-timer names for the current week
     var ftNames=D.firstTimerNames?D.firstTimerNames[li]:[];
@@ -2505,19 +2664,56 @@ function renderContent(){
       '</div>';
     }
 
+    // Disengaging volunteers
+    var disengaging=D.disengagingVolunteers||[];
+    var disengagingHTML='';
+    if(disengaging.length>0){
+      var disRows=disengaging.map(function(v){
+        var vp=(D.volunteerProfiles||[]).find(function(p){return p.name===v.name;});
+        var clickFn=vp?'openVolDetail(D.volunteerProfiles['+D.volunteerProfiles.indexOf(vp)+'])':'';
+        var initials=v.name.split(' ').map(function(w){return w[0]||'';}).join('').slice(0,2).toUpperCase();
+        var agoLabel=v.daysAgo?v.daysAgo+' day'+(v.daysAgo!==1?'s':'')+' ago':'';
+        var teamStr=v.teams&&v.teams.length?esc(v.teams.slice(0,2).join(', ')):'';
+        return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer"'+(clickFn?' onclick="'+clickFn+'"':'')+'>'+
+          '<div style="width:32px;height:32px;border-radius:8px;background:#fef3c715;color:var(--amber);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0">'+initials+'</div>'+
+          '<div style="flex:1;min-width:0">'+
+            '<div style="font-size:13px;font-weight:600;color:var(--text)">'+esc(v.name)+'</div>'+
+            '<div style="font-size:11px;color:var(--muted);margin-top:2px">'+(teamStr?teamStr+' · ':'')+'Last served: '+(v.lastServeLabel?esc(v.lastServeLabel):'unknown')+' · '+v.totalServes+' serve'+(v.totalServes!==1?'s':'')+'</div>'+
+          '</div>'+
+          '<span class="sbadge" style="background:#fef3c7;color:#d97706;border:1px solid #d9770644">'+agoLabel+'</span>'+
+        '</div>';
+      }).join('');
+      disengagingHTML='<div class="panel" style="--panel-dot:var(--amber)">'+
+        '<div class="panel-title">Disengaging Volunteers — '+disengaging.length+' need follow-up</div>'+
+        '<div class="panel-sub" style="margin-bottom:10px">Served in this time range but not in the last 30 days</div>'+
+        disRows+
+      '</div>';
+    }
+
     $('content').innerHTML=
       '<div class="stat-grid">'+
         statCard({label:'Unique Volunteers',value:fmt(D.uniqueVolunteers[li]),sub:'Individual people serving',sparkData:D.uniqueVolunteers,accent:'var(--purple)'})+
         statCard({label:'Positions Scheduled',value:fmt(D.scheduled[li]),
           sub:D.scheduled[li]&&D.uniqueVolunteers[li]?Math.round((D.scheduled[li]/D.uniqueVolunteers[li])*10)/10+' positions per person':'',accent:'var(--accent)'})+
-        statCard({label:'Confirmed',value:fmt(D.confirmed[li]),sub:pct(D.confirmed[li],D.uniqueVolunteers[li])+'% of unique volunteers confirmed',accent:'var(--green)'})+
+        statCard({label:'Confirmed',value:fmt(D.confirmed[li]),sub:pct(D.confirmed[li],D.scheduled[li])+'% of scheduled positions confirmed',accent:'var(--green)'})+
         statCard({label:'First-Time Volunteers',value:fmt(ftTotal),sub:ftConfirmed+' confirmed · '+(ftTotal-ftConfirmed)+' pending',sparkData:D.firstTimers,accent:'var(--teal)'})+
       '</div>'+
-      atRiskHTML+
       ftListHtml+
+      disengagingHTML+
+      '<div class="panel" style="--panel-dot:var(--amber)">'+
+        '<div class="panel-title">Multi-Service Volunteers</div>'+
+        '<div class="panel-sub">Scheduled at 2+ distinct service times in a single week</div>'+
+        '<div class="week-tabs" id="multi-week-tabs">'+weekBtns+'</div>'+
+        '<div style="color:var(--muted);font-size:13px;margin-bottom:12px">'+
+          '<strong style="color:var(--text)">'+currentMulti.length+'</strong> volunteer'+(currentMulti.length===1?'':'s')+
+          ' serving across multiple services week of <strong style="color:var(--text)">'+D.labels[selectedMultiWeek]+'</strong>'+
+        '</div>'+
+        '<table><thead><tr><th>Name</th><th>Times</th><th>Teams</th><th>Slots</th><th></th></tr></thead>'+
+        '<tbody>'+multiRows+'</tbody></table>'+
+      '</div>'+
       '<div class="panel" style="--panel-dot:var(--purple)">'+
         '<div class="vol-list-header" style="cursor:pointer" onclick="volListExpanded=!volListExpanded;renderContent();">'+
-          '<div><div class="panel-title">All Volunteers</div><div class="panel-sub" style="margin-bottom:0">'+allVols.length+' total · click to '+(volListExpanded?'collapse':'expand')+'</div></div>'+
+          '<div><div class="panel-title">All Volunteers</div><div class="panel-sub" style="margin-bottom:0">'+allVols.length+' total · click any name to view profile</div></div>'+
           '<span style="font-size:18px;color:var(--muted);transition:transform .2s;display:inline-block;transform:rotate('+(volListExpanded?'180':'0')+'deg)">▼</span>'+
         '</div>'+
         (volListExpanded?
@@ -2527,17 +2723,6 @@ function renderContent(){
           (filteredVols.length===0?'<div style="color:var(--muted);text-align:center;padding:24px 0;font-size:13px">No volunteers match "'+esc(volSearchQuery)+'"</div>':volRows)+
           (filteredVols.length>50?'<div style="color:var(--muted);font-size:12px;text-align:center;padding:10px 0">Showing 50 of '+filteredVols.length+' — search to filter</div>':'')
         :'')+
-      '</div>'+
-      '<div class="panel" style="--panel-dot:var(--amber)">'+
-        '<div class="panel-title">Multi-Service Volunteers</div>'+
-        '<div class="panel-sub">Volunteers scheduled at 2+ distinct service times in a single week</div>'+
-        '<div class="week-tabs" id="multi-week-tabs">'+weekBtns+'</div>'+
-        '<div style="color:var(--muted);font-size:13px;margin-bottom:12px">'+
-          '<strong style="color:var(--text)">'+currentMulti.length+'</strong> volunteer'+(currentMulti.length===1?'':'s')+
-          ' serving across multiple services week of <strong style="color:var(--text)">'+D.labels[selectedMultiWeek]+'</strong>'+
-        '</div>'+
-        '<table><thead><tr><th>Name</th><th>Time(s)</th><th>Teams</th><th>Slots</th><th></th></tr></thead>'+
-        '<tbody>'+multiRows+'</tbody></table>'+
       '</div>';
 
   } else if(activeTab==='citykids'){
@@ -2797,8 +2982,6 @@ function switchNewFamilyWeek(wi){
     var sr=await fetch('/status');
     var status=await sr.json();
     if(status.authenticated){
-      // Server already has creds — hide modal immediately and show loading
-      hideModal();
       setLoading(true);
       startProgress();
       try{
@@ -2811,8 +2994,8 @@ function switchNewFamilyWeek(wi){
       }catch(e){
         showError('Failed to load data: '+e.message);
       }finally{setLoading(false);stopProgress();}
-    }
-  }catch(e){/* server not reachable yet — just show modal */}
+    }else{openModal();}
+  }catch(e){openModal();/* server not reachable — show modal */}
 })();
 </script>
 </body>
