@@ -2384,6 +2384,9 @@ const server = http.createServer(async (req, res) => {
       // Seasons before this year are excluded: the life-group model changed
       // completely starting 2026, so earlier seasons are not comparable.
       const LG_FIRST_YEAR = 2026;
+      // Seasons hidden from the dashboard until leadership has verified the
+      // group list in PCO. Remove a label from this list to publish it.
+      const LG_HIDDEN_SEASONS = new Set(["October–December 2026"]);
       const groups = [];
       const groupFields = "&fields[Group]=name,schedule,memberships_count,description_as_plain_text,public_church_center_web_url,created_at,archived_at,contact_email,listed";
       for (const flt of ["group_type", "group_type,archived"]) {
@@ -2460,7 +2463,7 @@ const server = http.createServer(async (req, res) => {
       for (let i = groups.length - 1; i >= 0; i--) {
         const g = groups[i];
         const s = detectSeason(g);
-        if (!s || s.year < LG_FIRST_YEAR) { groups.splice(i, 1); continue; }
+        if (!s || s.year < LG_FIRST_YEAR || LG_HIDDEN_SEASONS.has(s.label)) { groups.splice(i, 1); continue; }
         g.season = s.label;
         g.seasonKey = s.key;
         g.startMonth = s.startMonth;
