@@ -4,3 +4,4 @@ node_modules/
 gh_*/
 .ft-assignments.json
 exports/
+.claude/settings.local.json

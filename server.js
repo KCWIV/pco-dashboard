@@ -165,9 +165,22 @@ function isAuthenticated(req) {
   return activeSessions.has(cookies.session);
 }
 
+// ── READ-ONLY GUARD ──────────────────────────────────────────────────────────
+// This dashboard must never modify Planning Center data. Every request to PCO
+// goes through assertPcoReadOnly(); anything other than GET throws before a
+// socket is opened. The PAT itself is read/write (PCO cannot scope a PAT), so
+// this is defence in depth — see CLAUDE.md "Read-only policy" for the rest.
+const PCO_ALLOWED_METHODS = new Set(["GET"]);
+function assertPcoReadOnly(method, apiPath) {
+  if (!PCO_ALLOWED_METHODS.has(String(method).toUpperCase())) {
+    throw new Error("PCO read-only policy: refused " + method + " " + apiPath);
+  }
+}
+
 // ── PCO fetch with automatic retry on rate-limit (429) and server errors ─────
 function pcoFetchOnce(apiPath) {
   return new Promise((resolve, reject) => {
+    assertPcoReadOnly("GET", apiPath);
     const auth = Buffer.from(savedCreds.appId + ":" + savedCreds.secret).toString("base64");
     const req = https.request(
       { hostname: PCO_BASE, path: apiPath, method: "GET",
@@ -1875,6 +1888,7 @@ const server = http.createServer(async (req, res) => {
       const testCreds = { appId, secret };
       const testAuth = Buffer.from(appId + ":" + secret).toString("base64");
       try {
+        assertPcoReadOnly("GET", "/services/v2/service_types?per_page=1");
         await new Promise((resolve, reject) => {
           const r = https.request(
             { hostname: PCO_BASE, path: "/services/v2/service_types?per_page=1", method: "GET",
@@ -2360,98 +2374,96 @@ const server = http.createServer(async (req, res) => {
       return res.end(JSON.stringify(lifegroupsCache.payload));
     }
     try {
-      // Fetch all Life Groups (group_type_id=112006)
+      // Fetch all Life Groups (group_type_id=112006) — ACTIVE AND ARCHIVED.
+      // The church archives a group when its season ends, so excluding archived
+      // groups silently erases every past season (Jan–Mar 2026 showed 1 group
+      // instead of 51 once its groups were archived). Two passes: PCO's
+      // `filter=archived` returns only archived groups, and the default returns
+      // only active ones.
       const LIFE_GROUP_TYPE_ID = "112006";
+      // Seasons before this year are excluded: the life-group model changed
+      // completely starting 2026, so earlier seasons are not comparable.
+      const LG_FIRST_YEAR = 2026;
       const groups = [];
-      let nextUrl = "/groups/v2/groups?filter=group_type&group_type_id=" + LIFE_GROUP_TYPE_ID +
-        "&per_page=100&fields[Group]=name,schedule,memberships_count,description_as_plain_text,public_church_center_web_url,created_at,archived_at,contact_email,listed";
-      while (nextUrl) {
-        const r = await pcoFetch(nextUrl);
-        if (r.status !== 200) break;
-        for (const g of (r.body.data || [])) {
-          const a = g.attributes;
-          if (a.archived_at) continue; // skip archived
-          // Skip aggregate/leadership groups that double-count members
-          // Skip aggregate/leadership groups that double-count members
-          if (/serve team|young adult fridays|lg leaders|lg coaches/i.test(a.name || "")) continue;
-          groups.push({
-            id:          g.id,
-            name:        a.name,
-            schedule:    a.schedule || null,
-            members:     a.memberships_count || 0,
-            description: a.description_as_plain_text || null,
-            churchCenterUrl: a.public_church_center_web_url || null,
-            createdAt:   a.created_at ? a.created_at.slice(0, 10) : null,
-            contactEmail: a.contact_email || null,
-          });
+      const groupFields = "&fields[Group]=name,schedule,memberships_count,description_as_plain_text,public_church_center_web_url,created_at,archived_at,contact_email,listed";
+      for (const flt of ["group_type", "group_type,archived"]) {
+        let nextUrl = "/groups/v2/groups?filter=" + flt + "&group_type_id=" + LIFE_GROUP_TYPE_ID + "&per_page=100" + groupFields;
+        while (nextUrl) {
+          const r = await pcoFetch(nextUrl);
+          if (r.status !== 200) break;
+          for (const g of (r.body.data || [])) {
+            const a = g.attributes;
+            // Skip aggregate/leadership groups that double-count members
+            if (/serve team|young adult fridays|lg leaders|lg coaches/i.test(a.name || "")) continue;
+            groups.push({
+              id:          g.id,
+              name:        a.name,
+              schedule:    a.schedule || null,
+              members:     a.memberships_count || 0,
+              description: a.description_as_plain_text || null,
+              churchCenterUrl: a.public_church_center_web_url || null,
+              createdAt:   a.created_at ? a.created_at.slice(0, 10) : null,
+              archivedAt:  a.archived_at ? a.archived_at.slice(0, 10) : null,
+              contactEmail: a.contact_email || null,
+            });
+          }
+          const nxt = r.body.links && r.body.links.next;
+          nextUrl = nxt ? (new URL(nxt)).pathname + (new URL(nxt)).search : null;
         }
-        const nxt = r.body.links && r.body.links.next;
-        nextUrl = nxt ? (new URL(nxt)).pathname + (new URL(nxt)).search : null;
       }
 
-      // ── Season detection ──────────────────────────────────────────────────
-      // Seasons follow 3-month cycles. Detect from group name suffixes like
-      // "| April-June" or "| January-March", and from createdAt date clusters.
-      // Season boundaries: Jan-Mar, Apr-Jun, Jul-Sep, Oct-Dec
-      const seasonMonthRanges = [
-        { label: "January–March",  months: [1,2,3],    namePatterns: [/\bjan(uary)?[\s\-–]+mar(ch)?\b/i, /\bjanuary[\s\-–]+march\b/i] },
-        { label: "April–June",     months: [4,5,6],    namePatterns: [/\bapr(il)?[\s\-–]+jun(e)?\b/i, /\bapril[\s\-–]+june\b/i] },
-        { label: "July–September", months: [7,8,9],    namePatterns: [/\bjul(y)?[\s\-–]+sep(tember)?\b/i] },
-        { label: "October–December", months: [10,11,12], namePatterns: [/\boct(ober)?[\s\-–]+dec(ember)?\b/i] },
+      // ── Season detection (year-aware) ─────────────────────────────────────
+      // A season is a calendar quarter in a specific year, labelled e.g.
+      // "January–March 2026". Without the year, the 2025 and 2026 January
+      // seasons collapse into one bucket and retention math compares the wrong
+      // cohorts. Resolution order:
+      //   1. explicit range in the name/schedule ("| April-June")
+      //   2. explicit month name in the name/schedule ("January Life Group")
+      //   3. created_at, with the church's prep cadence: groups are created in
+      //      the month BEFORE a season (Mar→Apr–Jun, Jun→Jul–Sep, Sep→Oct–Dec)
+      //      and in Nov/Dec for the following Jan–Mar.
+      const QUARTER_LABELS = ["January–March", "April–June", "July–September", "October–December"];
+      const quarterRangePatterns = [
+        /\bjan(uary)?[\s\-–]+mar(ch)?\b/i,
+        /\bapr(il)?[\s\-–]+jun(e)?\b/i,
+        /\bjul(y)?[\s\-–]+sep(tember)?\b/i,
+        /\boct(ober)?[\s\-–]+dec(ember)?\b/i,
       ];
-
-      function detectSeason(group) {
-        const name = group.name || "";
-        // Check for explicit season suffix in name (e.g. "| April-June")
-        for (const sr of seasonMonthRanges) {
-          for (const pat of sr.namePatterns) {
-            if (pat.test(name)) return sr.label;
-          }
-        }
-        // Also check schedule field for season indicators (e.g. "Monday Evenings | January-March")
-        const sched = group.schedule || "";
-        for (const sr of seasonMonthRanges) {
-          for (const pat of sr.namePatterns) {
-            if (pat.test(sched)) return sr.label;
-          }
-        }
-        // Fall back to createdAt — groups created Mar 2026+ with no season tag are likely
-        // April-June. Groups created Nov/Dec 2025 or Jan 2026 are January-March.
-        // Groups created before the current cycle default to January-March (most recent full season).
-        if (group.createdAt) {
-          const parts = group.createdAt.split("-");
-          const y = parseInt(parts[0]);
-          const m = parseInt(parts[1]);
-          // Only assign to April-June if created in March 2026 or later (new season prep)
-          if (y >= 2026 && m >= 3) return "April–June";
-          // Nov/Dec or Jan/Feb creation → January-March
-          if (m >= 11 || m <= 2) return "January–March";
-        }
-        return "January–March"; // default — most recent full season
-      }
-
-      // Detect specific start month (1-12) for each group — distinct from broad season label.
-      // January groups end in March and people join April groups.
-      // February groups end in April and people join May groups. Etc.
       const MONTH_NAMES = ['january','february','march','april','may','june',
                            'july','august','september','october','november','december'];
-      function detectGroupStartMonth(group) {
-        const name = (group.name || '').toLowerCase();
-        const sched = (group.schedule || '').toLowerCase();
-        // Look for explicit month name at word boundary in name or schedule
-        for (let i = 0; i < MONTH_NAMES.length; i++) {
-          const re = new RegExp('\\b' + MONTH_NAMES[i] + '\\b');
-          if (re.test(name) || re.test(sched)) return i + 1;
+      const seasonLabel = (year, q) => QUARTER_LABELS[q] + " " + year;
+      const seasonKey   = (year, q) => year * 4 + q; // sortable
+
+      function detectSeason(group) {
+        const text = (group.name || "") + " | " + (group.schedule || "");
+        const created = group.createdAt ? group.createdAt.split("-").map(Number) : null;
+        const cy = created ? created[0] : null, cm = created ? created[1] : null;
+        let q = null, startMonth = null;
+        for (let i = 0; i < 4; i++) if (quarterRangePatterns[i].test(text)) { q = i; startMonth = i * 3 + 1; break; }
+        if (q === null) {
+          for (let i = 0; i < 12; i++) if (new RegExp('\\b' + MONTH_NAMES[i] + '\\b', 'i').test(text)) { startMonth = i + 1; q = Math.floor(i / 3); break; }
         }
-        // Fall back to createdAt month
-        if (group.createdAt) return parseInt(group.createdAt.split('-')[1]);
-        return null;
+        let year = cy;
+        if (q === null) {
+          if (!cm) return null;
+          if (cm >= 11)          { q = 0; year = cy + 1; startMonth = 1; }   // Nov/Dec → next Jan–Mar
+          else if (cm % 3 === 0) { q = cm / 3; startMonth = cm + 1; }       // Mar/Jun/Sep → next quarter
+          else                   { q = Math.floor((cm - 1) / 3); startMonth = cm; }
+        } else if (cm && startMonth < cm - 3) {
+          year = cy + 1; // tagged January but created the previous autumn
+        }
+        if (!year) return null;
+        return { year, q, startMonth, label: seasonLabel(year, q), key: seasonKey(year, q) };
       }
 
-      // Tag each group with its season, start month, and a clean display name
-      for (const g of groups) {
-        g.season = detectSeason(g);
-        g.startMonth = detectGroupStartMonth(g);
+      // Tag each group; drop anything before LG_FIRST_YEAR or undatable
+      for (let i = groups.length - 1; i >= 0; i--) {
+        const g = groups[i];
+        const s = detectSeason(g);
+        if (!s || s.year < LG_FIRST_YEAR) { groups.splice(i, 1); continue; }
+        g.season = s.label;
+        g.seasonKey = s.key;
+        g.startMonth = s.startMonth;
         g.displayName = g.name.replace(/\s*\|\s*(january|april|july|october)[\s\-–]+(march|june|september|december)\s*/i, "").trim();
       }
 
@@ -2461,13 +2473,12 @@ const server = http.createServer(async (req, res) => {
       // Determine which seasons exist and which is current
       const now = new Date();
       const currentMonth = now.getMonth() + 1; // 1-based
-      const currentSeasonLabel = currentMonth <= 3 ? "January–March" :
-        currentMonth <= 6 ? "April–June" :
-        currentMonth <= 9 ? "July–September" : "October–December";
-      const allSeasons = [...new Set(groups.map(g => g.season))];
-      // Order seasons chronologically
-      const seasonOrder = ["January–March", "April–June", "July–September", "October–December"];
-      allSeasons.sort((a, b) => seasonOrder.indexOf(a) - seasonOrder.indexOf(b));
+      const seasonKeys = {};
+      for (const g of groups) seasonKeys[g.season] = g.seasonKey;
+      const allSeasons = Object.keys(seasonKeys).sort((a, b) => seasonKeys[a] - seasonKeys[b]);
+      // Current = this calendar quarter if it has groups, else the latest season that does
+      const calendarSeason = seasonLabel(now.getFullYear(), Math.floor((currentMonth - 1) / 3));
+      const currentSeasonLabel = seasonKeys[calendarSeason] !== undefined ? calendarSeason : (allSeasons[allSeasons.length - 1] || calendarSeason);
 
       // Active DNR is month-based, not season-based.
       // Groups rotate every 3 months from their start month:

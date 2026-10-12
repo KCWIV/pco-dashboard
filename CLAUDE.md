@@ -104,6 +104,15 @@ PCO allows corrections to headcounts. We keep only the **latest record per `(eve
 - Auth: HTTP Basic with App ID + Secret
 - Rate limit: 429 with `retry-after` header — respect it with exponential backoff
 
+## Read-only policy (Planning Center)
+
+**This project must never modify Planning Center data.** It reads PCO and renders it; nothing flows back.
+
+- `server.js` routes every PCO call through `assertPcoReadOnly()`, which throws on any method other than `GET` before a socket is opened. Do not add a second request path that bypasses it.
+- Do not run ad-hoc `curl`/scripts that `POST`, `PATCH`, `PUT` or `DELETE` against `api.planningcenteronline.com` from this project. A `PreToolUse` hook in `.claude/settings.json` blocks such commands; do not disable or work around it.
+- The Personal Access Token in `.env` is **read/write** — PCO cannot scope a PAT. The real lock is to issue the token from a PCO user whose permissions are "Viewer" in each product (People, Services, Check-Ins, Groups, Registrations) and use that token locally and on Render.
+- If a legitimate write is ever needed (e.g. backfilling a missed headcount), it is a separate, explicitly approved task — not something the dashboard or an agent does on its own.
+
 ## Conventions
 
 - **No npm dependencies** — use Node.js stdlib only (`http`, `https`, `fs`, `path`, `url`)
