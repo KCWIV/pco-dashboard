@@ -93,7 +93,7 @@ td{padding:10px 0;}
 tr+tr td{border-top:1px solid var(--border);}
 
 /* ── Pill ───────────────────────────────────────────────────────────────── */
-.pill{border-radius:99px;padding:3px 10px;font-size:11px;font-weight:600;font-family:'DM Mono',monospace;display:inline-block;}
+.pill{border-radius:99px;padding:3px 10px;font-size:11px;font-weight:600;font-variant-numeric:tabular-nums;display:inline-block;}
 
 /* ── Team cards (legacy) ────────────────────────────────────────────────── */
 .team-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:14px;}
@@ -158,7 +158,7 @@ tr+tr td{border-top:1px solid var(--border);}
 .vol-name{font-weight:600;font-size:14px;color:var(--text);}
 .vol-meta{color:var(--muted);font-size:12px;margin-top:1px;}
 .vol-right{margin-left:auto;text-align:right;}
-.vol-count{font-size:13px;font-weight:700;font-family:'DM Mono',monospace;}
+.vol-count{font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;}
 .vol-rate{font-size:11px;color:var(--muted);margin-top:1px;}
 .vol-list-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
 
@@ -356,6 +356,9 @@ input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(90,174,224,.15);
       </a>
       <a href="/easter-report" target="_blank" class="nav-item" style="text-decoration:none">
         <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></span> Easter Report
+      </a>
+      <a href="/city-kids-report" target="_blank" class="nav-item" style="text-decoration:none">
+        <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span> City Kids Report
       </a>
       <a href="/new-profiles-report" target="_blank" class="nav-item" style="text-decoration:none">
         <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/></svg></span> New Profiles Today
@@ -771,7 +774,7 @@ function renderTeamsTab(){
         var d=c-prev;
         var dc=qi===0?'var(--text)':d>0?'var(--green)':d<0?'var(--red)':'var(--muted)';
         var dStr=qi===0?'':(d>0?' +'+d:d<0?' '+d:'');
-        seasonCells+='<td style="text-align:center;font-family:\'DM Mono\',monospace;font-size:13px">'+
+        seasonCells+='<td style="text-align:center;font-family:\'DM Sans\',sans-serif;font-variant-numeric:tabular-nums;font-size:13px">'+
           '<span style="font-weight:600;color:'+dc+'">'+c+'</span>'+
           (dStr?'<span style="font-size:10px;color:'+dc+'">'+dStr+'</span>':'')+
         '</td>';
@@ -790,11 +793,11 @@ function renderTeamsTab(){
         '<div><div style="font-weight:600;font-size:14px">'+esc(t.name)+'</div>'+
         '<div style="font-size:11px;color:var(--muted)">'+esc(t.category)+' · '+healthLabel(t.health)+'</div></div>'+
       '</div></td>'+
-      '<td style="text-align:right"><span style="font-weight:700;font-family:\'DM Mono\',monospace;font-size:16px;color:'+hc+'">'+t.health+'</span><span style="font-size:11px;color:var(--muted)"> /100</span></td>'+
-      '<td style="text-align:right"><span style="font-weight:600;font-family:\'DM Mono\',monospace">'+t.members+'</span></td>'+
+      '<td style="text-align:right"><span style="font-weight:700;font-family:\'DM Sans\',sans-serif;font-variant-numeric:tabular-nums;font-size:16px;color:'+hc+'">'+t.health+'</span><span style="font-size:11px;color:var(--muted)"> /100</span></td>'+
+      '<td style="text-align:right"><span style="font-weight:600;font-family:\'DM Sans\',sans-serif;font-variant-numeric:tabular-nums">'+t.members+'</span></td>'+
       '<td style="text-align:right">'+pillHTML(t.coverage)+'</td>'+
       seasonCells+
-      '<td style="text-align:center"><span style="font-weight:700;font-family:\'DM Mono\',monospace;font-size:14px;color:'+netColor+'">'+netStr+'</span></td>'+
+      '<td style="text-align:center"><span style="font-weight:700;font-family:\'DM Sans\',sans-serif;font-variant-numeric:tabular-nums;font-size:14px;color:'+netColor+'">'+netStr+'</span></td>'+
       '<td style="text-align:right;font-size:16px;color:var(--muted2)">'+(isExpanded?'▾':'▸')+'</td>'+
     '</tr>';
 
@@ -874,12 +877,12 @@ function renderTeamsTab(){
         var barColor=isLast?(delta>0?'var(--green)':delta<0?'var(--red)':'var(--accent)'):'var(--accent)';
         var barOpacity=isLast?1:0.35;
         chartRows+='<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:1px">'+
-          '<div style="font-size:10px;color:'+(isLast?'var(--text)':'var(--muted)')+';font-family:\'DM Mono\',monospace;font-weight:'+(isLast?'700':'400')+'">'+c+'</div>'+
+          '<div style="font-size:10px;color:'+(isLast?'var(--text)':'var(--muted)')+';font-family:\'DM Sans\',sans-serif;font-variant-numeric:tabular-nums;font-weight:'+(isLast?'700':'400')+'">'+c+'</div>'+
           '<div style="width:100%;height:'+barH+'px;background:'+barColor+';border-radius:2px;opacity:'+barOpacity+'"></div>'+
         '</div>';
       });
       chartRows+='</div>'+
-        '<div style="width:50px;text-align:right;font-size:12px;font-weight:700;font-family:\'DM Mono\',monospace;color:'+deltaColor+'">'+deltaLabel+'</div>'+
+        '<div style="width:50px;text-align:right;font-size:12px;font-weight:700;font-family:\'DM Sans\',sans-serif;font-variant-numeric:tabular-nums;color:'+deltaColor+'">'+deltaLabel+'</div>'+
       '</div>';
     });
 
@@ -936,10 +939,10 @@ function renderTeamsTab(){
 
   $('content').innerHTML=
     '<div class="stat-grid">'+
-      statCard({label:'Serve Teams',value:allTeams.length,sub:totalMembers+' total team slots',accent:'var(--accent)',featured:true})+
-      statCard({label:'Avg Health',value:avgHealth+'/100',sub:healthy+' of '+allTeams.length+' healthy',accent:healthColor(avgHealth)})+
-      statCard({label:'Avg Coverage',value:avgCoverage+'%',sub:'Confirmed vs scheduled',accent:colorFor(avgCoverage)})+
-      statCard({label:'Growth Trend',value:(growing>shrinking?'+':'')+growing+' / '+shrinking,sub:growing+' growing · '+shrinking+' shrinking',accent:growing>=shrinking?'var(--green)':'var(--red)'})+
+      statCard({label:'Serve Teams',value:allTeams.length,sub:totalMembers+' total team slots',featured:true})+
+      statCard({label:'Avg Health',value:avgHealth+'/100',sub:healthy+' of '+allTeams.length+' healthy',status:healthColor(avgHealth)})+
+      statCard({label:'Avg Coverage',value:avgCoverage+'%',sub:'Confirmed vs scheduled',status:colorFor(avgCoverage)})+
+      statCard({label:'Growth Trend',value:(growing>shrinking?'+':'')+growing+' / '+shrinking,sub:growing+' growing · '+shrinking+' shrinking',status:growing>=shrinking?'var(--green)':'var(--red)'})+
     '</div>'+
     catCardsHtml+
     attentionHtml+
@@ -1087,10 +1090,10 @@ function renderBirthdaysTab(){
 
   $('content').innerHTML=
     '<div class="stat-grid">'+
-      statCard({label:'Total Birthdays',value:fmt(BD.total),sub:'Active members with birthday on file',accent:'var(--accent)'})+
-      statCard({label:'This Week',value:fmt((BD.thisWeek||[]).length),sub:'Upcoming in next 7 days',accent:'var(--green)'})+
-      statCard({label:'Today',value:fmt((BD.today||[]).length),sub:(BD.today||[]).map(function(p){return p.name.split(' ')[0];}).join(', ')||'No birthdays today',accent:'var(--purple)'})+
-      statCard({label:fullMonths[bdSelectedMonth],value:fmt(BD.monthCounts[bdSelectedMonth]),sub:'Birthdays this month',accent:'var(--amber)'})+
+      statCard({label:'Total Birthdays',value:fmt(BD.total),sub:'Active members with birthday on file'})+
+      statCard({label:'This Week',value:fmt((BD.thisWeek||[]).length),sub:'Upcoming in next 7 days'})+
+      statCard({label:'Today',value:fmt((BD.today||[]).length),sub:(BD.today||[]).map(function(p){return p.name.split(' ')[0];}).join(', ')||'No birthdays today'})+
+      statCard({label:fullMonths[bdSelectedMonth],value:fmt(BD.monthCounts[bdSelectedMonth]),sub:'Birthdays this month'})+
     '</div>'+
     '<div class="panel">'+
       '<div class="panel-title">Birthday Calendar</div>'+
@@ -1367,12 +1370,12 @@ function renderLifeGroupsTab(){
 
   // Stat grid
   var statsHtml='<div class="stat-grid" style="margin-bottom:20px">'+
-    statCard({label:(showAll?'All':'Season')+' Life Groups',value:fmt(s.total||groups.length),sub:(s.healthyGroups||0)+' healthy · '+(s.largeGroups||0)+' large · '+(s.smallGroups||0)+' small',accent:'var(--brand)',featured:true})+
-    statCard({label:'Unique Individuals',value:fmt(uniqueCount),sub:showAll&&uniqueCount!==(s.totalEnrolled||0)?fmt(s.totalEnrolled)+' total enrollments (some in multiple groups)':'Deduplicated across '+(showAll?'all seasons':lgSelectedSeason),accent:'var(--green)'})+
-    statCard({label:'Avg Group Size',value:fmt(s.avgSize||0),sub:'Target: 8–20 per group',accent:'var(--purple)'})+
+    statCard({label:(showAll?'All':'Season')+' Life Groups',value:fmt(s.total||groups.length),sub:(s.healthyGroups||0)+' healthy · '+(s.largeGroups||0)+' large · '+(s.smallGroups||0)+' small',featured:true})+
+    statCard({label:'Unique Individuals',value:fmt(uniqueCount),sub:showAll&&uniqueCount!==(s.totalEnrolled||0)?fmt(s.totalEnrolled)+' total enrollments (some in multiple groups)':'Deduplicated across '+(showAll?'all seasons':lgSelectedSeason)})+
+    statCard({label:'Avg Group Size',value:fmt(s.avgSize||0),sub:'Target: 8–20 per group'})+
     (connectionRate!==null
-      ? statCard({label:'Connection Rate',value:connectionRate+'%',sub:fmt(uniqueCount)+' of '+fmt(activeTotal)+' active members',accent:'var(--teal)'})
-      : statCard({label:'Groups by Day',value:meetingDays.length,sub:(meetingDays.slice().sort(function(a,b){return b.count-a.count;})[0]||{day:''}).day+' is most popular',accent:'var(--amber)'}))+
+      ? statCard({label:'Connection Rate',value:connectionRate+'%',sub:fmt(uniqueCount)+' of '+fmt(activeTotal)+' active members'})
+      : statCard({label:'Groups by Day',value:meetingDays.length,sub:(meetingDays.slice().sort(function(a,b){return b.count-a.count;})[0]||{day:''}).day+' is most popular'}))+
   '</div>';
 
   // Season transition / retention panel
@@ -1493,7 +1496,7 @@ function renderLifeGroupsTab(){
         '<div style="flex:1;height:8px;background:var(--surface);border-radius:99px;overflow:hidden;border:1px solid var(--border)">'+
           '<div style="height:100%;width:'+pct+'%;background:var(--brand);border-radius:99px"></div>'+
         '</div>'+
-        '<div style="width:28px;text-align:right;font-size:13px;font-weight:700;font-family:\'DM Mono\',monospace;color:var(--text)">'+d.count+'</div>'+
+        '<div style="width:28px;text-align:right;font-size:13px;font-weight:700;font-family:\'DM Sans\',sans-serif;font-variant-numeric:tabular-nums;color:var(--text)">'+d.count+'</div>'+
       '</div></div>';
       if(isExpanded&&d.groups){
         row+='<div style="margin:0 0 12px 18px;padding:8px 12px;background:var(--surface);border-radius:8px;border:1px solid var(--border)">';
@@ -1699,16 +1702,16 @@ var rangeLabels={1:'Last Week',4:'4 Weeks',8:'8 Weeks',13:'3 Months',26:'6 Month
 // Service time colors for attendance breakdown
 var serviceTimeColors={
   // Current 4-service schedule
-  '8:30 AM':'#60a5fa',
+  '8:30 AM':'var(--purple)',
   '10:00 AM':'var(--accent)',
   '11:30 AM':'var(--green)',
-  '1:00 PM':'var(--purple)',
+  '1:00 PM':'var(--amber)',
   // Legacy service times (historical data)
   '9:00 AM':'var(--accent)',
   '10:30 AM':'var(--green)',
-  '12:30 PM':'var(--purple)',
+  '12:30 PM':'var(--amber)',
   '11:00 AM':'var(--amber)',
-  '8:00 AM':'#60a5fa',
+  '8:00 AM':'var(--purple)',
 };
 var defaultServiceColor='var(--muted)';
 function getServiceColor(label){return serviceTimeColors[label]||defaultServiceColor;}
@@ -1839,7 +1842,7 @@ function renderChartOnly(chartId){
     if(subEl) subEl.innerHTML=legend+' · '+(cd.grouping==='monthly'?'Monthly':'Weekly')+' · '+cd.labels.length+' '+(cd.grouping==='monthly'?'months':'weeks')+' <span style="color:var(--muted);font-size:11px">(excludes evening services)</span>';
     var chartEl=$('attendance-chart');
     // Add a total dataset for value labels when showing by service
-    if(chartEl) chartEl.innerHTML=barChart(cd.labels,datasets,180,{fullWidth:true,showTotals:true});
+    if(chartEl) chartEl.innerHTML=barChart(cd.labels,datasets,180,{fullWidth:true,showTotals:true,stacked:true});
   } else if(chartId==='sched'){
     var subEl=$('sched-sub');
     if(subEl) subEl.innerHTML='<span style="color:var(--accent)">■</span> Scheduled &nbsp;<span style="color:var(--green)">■</span> Confirmed · '+cd.labels.length+' '+(cd.grouping==='monthly'?'months':'weeks');
@@ -1878,7 +1881,7 @@ function renderChartOnly(chartId){
     var subEl=$('kidscheckins-sub');
     if(subEl) subEl.innerHTML=ciLegend+' · Individual kids checked in per service';
     var chartEl=$('kidscheckins-chart');
-    if(chartEl) chartEl.innerHTML=barChart(cd.labels,ciDatasets,160,{fullWidth:true,showTotals:true});
+    if(chartEl) chartEl.innerHTML=barChart(cd.labels,ciDatasets,160,{fullWidth:true,showTotals:true,stacked:true});
   } else if(chartId==='coverage'){
     var tw=cd.teamsWeekly||[];
     var teamColors=['var(--accent)','var(--green)','var(--purple)','var(--amber)','var(--teal)','var(--red)','#60a5fa','#f472b6'];
@@ -2151,15 +2154,24 @@ function barChart(labels,datasets,height,opts){
     return'<div style="display:flex;align-items:center;justify-content:center;height:'+height+'px;color:var(--muted2);font-size:13px;background:var(--surface);border-radius:10px;border:1px dashed var(--border)">No data available for this range</div>';
   }
 
-  var maxVal=Math.max.apply(null,datasets.reduce(function(a,d){return a.concat(d.data);},[]).concat([1]));
+  var stacked=!!opts.stacked&&datasets.length>1;
+  // Stacked: scale to the tallest column (sum of series); grouped: tallest single bar
+  var maxVal=stacked
+    ?Math.max.apply(null,labels.map(function(l,i){return datasets.reduce(function(s,d){return s+(d.data[i]||0);},0);}).concat([1]))
+    :Math.max.apply(null,datasets.reduce(function(a,d){return a.concat(d.data);},[]).concat([1]));
 
   var yAxisW=showYAxis?48:0;
-  var topPad=showValues?22:4;
+  var showTotals=!!opts.showTotals;
+  // Reserve headroom for the column total: a column at the y-axis ceiling would
+  // otherwise push its label above y=0 and get clipped. Grouped charts also
+  // carry per-bar value labels above the bars, so they need a little more.
+  var topPad=showTotals?(stacked?30:36):(showValues?22:4);
   var botPad=28;
 
-  var barW=fullWidth?Math.max(20,Math.min(44,Math.floor(700/labels.length/datasets.length))):14;
+  var cols=stacked?1:datasets.length;
+  var barW=fullWidth?Math.max(20,Math.min(stacked?56:44,Math.floor(700/labels.length/cols))):14;
   var barGap=2;
-  var groupW=barW*datasets.length+barGap*(datasets.length-1);
+  var groupW=barW*cols+barGap*(cols-1);
   var groupGap=fullWidth?Math.max(20,Math.floor(500/labels.length)):10;
   var chartW=labels.length*(groupW+groupGap);
   var totalW=yAxisW+chartW;
@@ -2188,33 +2200,62 @@ function barChart(labels,datasets,height,opts){
       var tickVal=t*yStep;
       var tickY=topPad+height-Math.round(tickVal/niceMax*height);
       svg+='<line x1="'+yAxisW+'" y1="'+tickY+'" x2="'+(yAxisW+chartW)+'" y2="'+tickY+'" stroke="var(--border)" stroke-width="1" opacity=".4"/>';
-      svg+='<text x="'+(yAxisW-8)+'" y="'+(tickY+4)+'" text-anchor="end" fill="var(--muted)" font-size="10" font-family="DM Mono,monospace">'+fmt(tickVal)+'</text>';
+      svg+='<text x="'+(yAxisW-8)+'" y="'+(tickY+4)+'" text-anchor="end" fill="var(--muted)" font-size="10" font-family="DM Sans,sans-serif" style="font-variant-numeric:tabular-nums">'+fmt(tickVal)+'</text>';
     }
   }
 
-  // Bars + value labels on top
-  datasets.forEach(function(ds,di){
-    ds.data.forEach(function(val,i){
-      var bh=Math.round(val/maxVal*height);
-      var x=yAxisW+i*(groupW+groupGap)+di*(barW+barGap)+(groupGap/2);
-      var y=topPad+height-bh;
-      svg+='<rect x="'+x+'" y="'+y+'" width="'+barW+'" height="'+bh+'" fill="'+ds.color+'" rx="3" opacity=".85"><title>'+ds.label+': '+fmt(val)+'</title></rect>';
-      if(showValues&&val>0){
-        svg+='<text x="'+(x+barW/2)+'" y="'+(y-5)+'" text-anchor="middle" fill="'+ds.color+'" font-size="10" font-weight="600" font-family="DM Mono,monospace">'+fmt(val)+'</text>';
-      }
+  if(stacked){
+    // One column per label, series stacked bottom-up. Segment values sit inside
+    // the segment when it is tall enough to hold them, so labels never collide;
+    // the column total goes on top via showTotals.
+    labels.forEach(function(l,i){
+      var x=yAxisW+i*(groupW+groupGap)+(groupGap/2);
+      var yCursor=topPad+height;
+      var topIdx=-1;
+      datasets.forEach(function(ds,di){if(ds.data[i]>0)topIdx=di;});
+      datasets.forEach(function(ds,di){
+        var val=ds.data[i]||0;
+        if(val<=0)return;
+        var bh=Math.round(val/maxVal*height);
+        yCursor-=bh;
+        var title='<title>'+ds.label+': '+fmt(val)+'</title>';
+        if(di===topIdx&&bh>=3){
+          // Round only the top corners of the topmost segment
+          var r=3,w=barW;
+          svg+='<path d="M'+x+','+(yCursor+r)+' a'+r+','+r+' 0 0 1 '+r+',-'+r+' h'+(w-2*r)+' a'+r+','+r+' 0 0 1 '+r+','+r+' v'+(bh-r)+' h-'+w+' z" fill="'+ds.color+'" opacity=".9">'+title+'</path>';
+        } else {
+          svg+='<rect x="'+x+'" y="'+yCursor+'" width="'+barW+'" height="'+bh+'" fill="'+ds.color+'" opacity=".9">'+title+'</rect>';
+        }
+        if(showValues&&bh>=14){
+          svg+='<text x="'+(x+barW/2)+'" y="'+(yCursor+bh/2+3.5)+'" text-anchor="middle" fill="#fff" font-size="10" font-weight="600" font-family="DM Sans,sans-serif" style="font-variant-numeric:tabular-nums">'+fmt(val)+'</text>';
+        }
+      });
     });
-  });
+  } else {
+    // Grouped bars + value labels on top
+    datasets.forEach(function(ds,di){
+      ds.data.forEach(function(val,i){
+        var bh=Math.round(val/maxVal*height);
+        var x=yAxisW+i*(groupW+groupGap)+di*(barW+barGap)+(groupGap/2);
+        var y=topPad+height-bh;
+        svg+='<rect x="'+x+'" y="'+y+'" width="'+barW+'" height="'+bh+'" fill="'+ds.color+'" rx="3" opacity=".85"><title>'+ds.label+': '+fmt(val)+'</title></rect>';
+        if(showValues&&val>0){
+          svg+='<text x="'+(x+barW/2)+'" y="'+(y-5)+'" text-anchor="middle" fill="'+ds.color+'" font-size="10" font-weight="600" font-family="DM Sans,sans-serif" style="font-variant-numeric:tabular-nums">'+fmt(val)+'</text>';
+        }
+      });
+    });
+  }
 
   // Show group totals on top (sum of all datasets per label), positioned above tallest bar
   if(opts.showTotals&&datasets.length>0){
     labels.forEach(function(l,i){
       var total=datasets.reduce(function(s,ds){return s+(ds.data[i]||0);},0);
       if(total<=0)return;
-      var tallest=Math.max.apply(null,datasets.map(function(ds){return ds.data[i]||0;}));
+      var tallest=stacked?total:Math.max.apply(null,datasets.map(function(ds){return ds.data[i]||0;}));
       var tallestH=Math.round(tallest/maxVal*height);
       var cx=yAxisW+i*(groupW+groupGap)+groupW/2+(groupGap/2);
-      var ty=topPad+height-tallestH-18;
-      svg+='<text x="'+cx+'" y="'+ty+'" text-anchor="middle" fill="var(--text,#1a1a2e)" font-size="11" font-weight="700" font-family="DM Mono,monospace">'+fmt(total)+'</text>';
+      var ty=topPad+height-tallestH-(stacked?8:18);
+      svg+='<text x="'+cx+'" y="'+ty+'" text-anchor="middle" fill="var(--text,#1a1a2e)" font-size="11" font-weight="700" font-family="DM Sans,sans-serif" style="font-variant-numeric:tabular-nums">'+fmt(total)+'</text>';
     });
   }
 
@@ -2239,8 +2280,11 @@ function spark(data,color){
 }
 
 // ── Stat card ──────────────────────────────────────────────────────────────────
+// Cards are neutral by default: text-coloured number, brand-blue sparkline.
+// Colour is reserved for meaning — pass `status` (green/amber/red) only when the
+// value itself is a judgement (health score, coverage %), and colour deltas via
+// deltaHTML() so direction, not category, carries the signal.
 function statCard(o){
-  var color=o.accent;
   if(o.featured){
     return'<div class="stat-card featured">'+
       '<div class="stat-label">'+o.label+'</div>'+
@@ -2249,11 +2293,17 @@ function statCard(o){
       (o.sparkData?spark(o.sparkData,'rgba(255,255,255,0.7)'):'')+'</div>';
   }
   return'<div class="stat-card">'+
-    '<div style="position:absolute;top:0;left:0;right:0;height:3px;border-radius:16px 16px 0 0;background:'+color+'"></div>'+
     '<div class="stat-label">'+o.label+'</div>'+
-    '<div class="stat-value" style="color:'+color+'">'+o.value+'</div>'+
+    '<div class="stat-value" style="color:'+(o.status||'var(--text)')+'">'+o.value+'</div>'+
     (o.sub?'<div class="stat-sub">'+o.sub+'</div>':'')+
-    (o.sparkData?spark(o.sparkData,color):'')+'</div>';
+    (o.sparkData?spark(o.sparkData,'var(--brand)'):'')+'</div>';
+}
+// A signed change, coloured by direction. `text` is the display string
+// (e.g. "▲ 47 (5%)"); `onDark` picks tints readable on the featured card.
+function deltaHTML(delta,text,onDark){
+  var c=delta>0?'var(--green)':delta<0?'var(--red)':'var(--muted)';
+  if(onDark)c=delta<0?'#fecaca':'rgba(255,255,255,.95)';
+  return'<span style="color:'+c+';font-weight:600">'+text+'</span>';
 }
 
 // ── People tab renderer ────────────────────────────────────────────────────────
@@ -2288,10 +2338,10 @@ function renderPeopleTab(){
   // Stat grid
   var statsHtml=
     '<div class="stat-grid" style="margin-bottom:20px">'+
-      statCard({label:'Active Members',value:fmt(g.totalActive),sub:'Currently active in PCO',accent:'var(--brand)',featured:true})+
-      statCard({label:'New This Month',value:fmt(g.newThisMonth),sub:'<span style="color:'+growthColor+'">'+growthArrow+'</span>',accent:'var(--green)'})+
-      statCard({label:'Added (12 Months)',value:fmt(g.totalInRange),sub:'New profiles in the past year',accent:'var(--purple)'})+
-      statCard({label:'Inactive Profiles',value:fmt(g.totalInactive),sub:'Cumulative since church started',accent:'var(--amber)'})+
+      statCard({label:'Active Members',value:fmt(g.totalActive),sub:'Currently active in PCO',featured:true})+
+      statCard({label:'New This Month',value:fmt(g.newThisMonth),sub:'<span style="color:'+growthColor+'">'+growthArrow+'</span>'})+
+      statCard({label:'Added (12 Months)',value:fmt(g.totalInRange),sub:'New profiles in the past year'})+
+      statCard({label:'Inactive Profiles',value:fmt(g.totalInactive),sub:'Cumulative since church started'})+
     '</div>';
 
   // New member growth bar chart
@@ -2439,7 +2489,7 @@ function openTeamDetail(teamName){
         '<div style="flex:1;height:8px;background:var(--surface);border-radius:99px;overflow:hidden;border:1px solid var(--border)">'+
           '<div style="height:100%;width:'+(sch>0?cov:0)+'%;background:'+rc+';border-radius:99px;transition:width .4s"></div>'+
         '</div>'+
-        '<div style="width:60px;text-align:right;font-size:12px;font-family:\'DM Mono\',monospace"><span style="color:'+rc+';font-weight:600">'+con+'</span><span style="color:var(--muted2)"> / '+sch+'</span></div>'+
+        '<div style="width:60px;text-align:right;font-size:12px;font-family:\'DM Sans\',sans-serif;font-variant-numeric:tabular-nums"><span style="color:'+rc+';font-weight:600">'+con+'</span><span style="color:var(--muted2)"> / '+sch+'</span></div>'+
         '<span class="pill" style="width:42px;text-align:center;background:'+rc+'15;color:'+rc+';border:1px solid '+rc+'30;font-size:10px">'+cov+'%</span>'+
       '</div>';
     }).join('');
@@ -2528,16 +2578,16 @@ function renderContent(){
     $('content').innerHTML=
       '<div class="stat-grid">'+
         statCard({label:'Sunday Attendance',value:fmt(D.attendance[li]),
-          sub:li>0?attArrow+' '+Math.abs(attDelta)+' ('+attPctChange+'%) vs prior · Avg: '+fmt(attAvg):'Avg: '+fmt(attAvg),
-          sparkData:D.attendance,accent:'var(--accent)',featured:true})+
+          sub:(li>0?deltaHTML(attDelta,attArrow+' '+Math.abs(attDelta)+' ('+attPctChange+'%)',true)+' vs prior · ':'')+'Avg: '+fmt(attAvg),
+          sparkData:D.attendance,featured:true})+
         statCard({label:'City Kids',value:fmt(kidsData[li]),
-          sub:li>0?kidsArrow+' '+Math.abs(kidsDelta)+' ('+kidsPctChange+'%) vs prior':'',
-          sparkData:kidsData,accent:'var(--amber)'})+
-        statCard({label:'Volunteers',value:pct(D.confirmed[li],D.uniqueVolunteers[li])+'% confirmed',
-          sub:li>0?volArrow+' '+Math.abs(volDelta)+' vs prior week':'',
-          sparkData:D.uniqueVolunteers,accent:'var(--green)'})+
+          sub:li>0?deltaHTML(kidsDelta,kidsArrow+' '+Math.abs(kidsDelta)+' ('+kidsPctChange+'%)')+' vs prior':'',
+          sparkData:kidsData})+
+        statCard({label:'Volunteers',value:fmt(D.uniqueVolunteers[li]),
+          sub:li>0?deltaHTML(volDelta,volArrow+' '+Math.abs(volDelta))+' vs prior week':'',
+          sparkData:D.uniqueVolunteers})+
         statCard({label:'Decisions',value:fmt(decisionsData[li]),
-          sub:fmt(decLast4)+' in the last month',sparkData:decisionsData,accent:'var(--purple)'})+
+          sub:fmt(decLast4)+' in the last month',sparkData:decisionsData})+
       '</div>'+
       '<div class="panel" style="--panel-dot:var(--accent)">'+
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">'+
@@ -2587,7 +2637,8 @@ function renderContent(){
           var teamBadges=teamNames.map(function(t){
             return '<span style="display:inline-block;background:var(--accent)12;color:var(--accent);border:1px solid var(--accent)25;border-radius:6px;padding:2px 7px;font-size:11px;font-weight:500;margin:1px 2px 1px 0">'+esc(t)+'</span>';
           }).join('');
-          var times=(v.serviceTimes||[]).join(', ')||(v.schedules||[]).map(function(s){return s.serviceTime||'';}).filter(Boolean).join(', ')||'—';
+          var rawTimes=(v.serviceTimes||[]).length?v.serviceTimes:(v.schedules||[]).map(function(s){return s.serviceTime||'';}).filter(Boolean);
+          var times=sortServiceTimes(rawTimes.filter(function(t,i){return rawTimes.indexOf(t)===i;})).join(', ')||'—';
           var vp=(D.volunteerProfiles||[]).find(function(p){return p.name===v.name;});
           var clickFn=vp?'openVolDetail(D.volunteerProfiles['+D.volunteerProfiles.indexOf(vp)+'])':'openDetail('+selectedMultiWeek+','+i+')';
           return'<tr class="crow" onclick="'+clickFn+'">'+
@@ -2705,11 +2756,11 @@ function renderContent(){
 
     $('content').innerHTML=
       '<div class="stat-grid">'+
-        statCard({label:'Unique Volunteers',value:fmt(D.uniqueVolunteers[li]),sub:'Individual people serving',sparkData:D.uniqueVolunteers,accent:'var(--purple)'})+
+        statCard({label:'Unique Volunteers',value:fmt(D.uniqueVolunteers[li]),sub:'Individual people serving',sparkData:D.uniqueVolunteers})+
         statCard({label:'Positions Scheduled',value:fmt(D.scheduled[li]),
-          sub:D.scheduled[li]&&D.uniqueVolunteers[li]?Math.round((D.scheduled[li]/D.uniqueVolunteers[li])*10)/10+' positions per person':'',accent:'var(--accent)'})+
-        statCard({label:'Confirmed',value:fmt(D.confirmed[li]),sub:pct(D.confirmed[li],D.scheduled[li])+'% of scheduled positions confirmed',accent:'var(--green)'})+
-        statCard({label:'First-Time Volunteers',value:fmt(ftTotal),sub:ftConfirmed+' confirmed · '+(ftTotal-ftConfirmed)+' pending',sparkData:D.firstTimers,accent:'var(--teal)'})+
+          sub:D.scheduled[li]&&D.uniqueVolunteers[li]?Math.round((D.scheduled[li]/D.uniqueVolunteers[li])*10)/10+' positions per person':''})+
+        statCard({label:'Confirmed',value:fmt(D.confirmed[li]),sub:pct(D.confirmed[li],D.scheduled[li])+'% of scheduled positions confirmed'})+
+        statCard({label:'First-Time Volunteers',value:fmt(ftTotal),sub:ftConfirmed+' confirmed · '+(ftTotal-ftConfirmed)+' pending',sparkData:D.firstTimers})+
       '</div>'+
       ftListHtml+
       disengagingHTML+
@@ -2763,9 +2814,20 @@ function renderContent(){
     sortedSvcTimes.forEach(function(svcTime){
       var rooms=ckRoomBreakdown[svcTime];
       var roomNames=Object.keys(rooms).sort();
-      // Build a table: rows=rooms, columns=weeks (just show last 4 weeks for readability)
+      // Build a table: rows=rooms, columns=weeks (just show last 8 weeks for readability)
       var showWeeks=Math.min(D.labels.length,8);
       var startIdx=D.labels.length-showWeeks;
+      // A service with no headcounts anywhere in the visible range (e.g. 1:00 PM
+      // paused for the summer) collapses to one line instead of a table of zeros.
+      var hasAny=roomNames.some(function(r){return rooms[r].slice(startIdx).some(function(v){return v>0;});});
+      if(!hasAny){
+        roomHTML+='<div class="panel" style="display:flex;align-items:center;gap:10px;padding:14px 22px">'+
+          '<span style="color:'+getServiceColor(svcTime)+';font-size:18px">●</span>'+
+          '<span style="font-weight:600">'+svcTime+' Service</span>'+
+          '<span style="color:var(--muted);font-size:13px">— no headcounts in this range</span>'+
+        '</div>';
+        return;
+      }
       var headerCells=D.labels.slice(startIdx).map(function(l){
         return '<th style="text-align:right;padding:6px 8px;min-width:55px">'+l+'</th>';
       }).join('');
@@ -2776,7 +2838,7 @@ function renderContent(){
           var idx=startIdx+i;
           var prev=idx>0?data[idx-1]:null;
           var diffColor=prev!==null?(v>prev?'var(--green)':v<prev?'var(--red)':'var(--muted)'):'var(--muted)';
-          return '<td style="text-align:right;padding:6px 8px;font-family:\'DM Mono\',monospace;font-size:13px">'+
+          return '<td style="text-align:right;padding:6px 8px;font-family:\'DM Sans\',sans-serif;font-variant-numeric:tabular-nums;font-size:13px">'+
             '<span style="font-weight:600">'+v+'</span>'+
             (prev!==null&&v!==prev?'<span style="color:'+diffColor+';font-size:10px;margin-left:3px">'+(v>prev?'▲':'▼')+Math.abs(v-prev)+'</span>':'')+
           '</td>';
@@ -2793,7 +2855,7 @@ function renderContent(){
       var totalCells=D.labels.slice(startIdx).map(function(l,ci){
         var idx=startIdx+ci;
         var sum=roomNames.reduce(function(s,r){return s+(rooms[r][idx]||0);},0);
-        return '<td style="text-align:right;padding:6px 8px;font-family:\'DM Mono\',monospace;font-weight:700;font-size:13px;border-top:2px solid var(--border)">'+sum+'</td>';
+        return '<td style="text-align:right;padding:6px 8px;font-family:\'DM Sans\',sans-serif;font-variant-numeric:tabular-nums;font-weight:700;font-size:13px;border-top:2px solid var(--border)">'+sum+'</td>';
       }).join('');
 
       roomHTML+='<div class="panel">'+
@@ -2834,7 +2896,7 @@ function renderContent(){
       ckCurrentMulti.forEach(function(kid){
         ckMultiRows+='<tr>'+
           '<td style="font-weight:500">'+esc(kid.name)+'</td>'+
-          '<td>'+kid.services.join(', ')+'</td>'+
+          '<td>'+sortServiceTimes(kid.services||[]).join(', ')+'</td>'+
           '<td style="text-align:center;font-weight:600">'+kid.serviceCount+'</td>'+
         '</tr>';
       });
@@ -2880,13 +2942,13 @@ function renderContent(){
     $('content').innerHTML=
       '<div class="stat-grid">'+
         statCard({label:'Kids Checked In',value:fmt(ckCheckins[li]),
-          sub:'Total check-ins this week (incl. multi-service)',sparkData:ckCheckins,accent:'var(--green)'})+
+          sub:'Total check-ins this week (incl. multi-service)',sparkData:ckCheckins})+
         statCard({label:'Unique Kids',value:fmt(ckUniqueKids[li]),
-          sub:'Individual children this week',sparkData:ckUniqueKids,accent:'var(--accent)'})+
+          sub:'Individual children this week',sparkData:ckUniqueKids})+
         statCard({label:'New Families',value:fmt(nfCount[li]),
-          sub:nfTotal+' new in last '+D.weeks+' weeks',sparkData:nfCount,accent:'var(--purple)'})+
+          sub:nfTotal+' new in last '+D.weeks+' weeks',sparkData:nfCount})+
         statCard({label:'Kids Headcount',value:fmt(ckHeadcounts[li]),
-          sub:'Room-by-room manual counts',sparkData:ckHeadcounts,accent:'var(--amber)'})+
+          sub:'Room-by-room manual counts',sparkData:ckHeadcounts})+
       '</div>'+
       '<div class="panel">'+
         '<div class="panel-title">New Families</div>'+
@@ -2932,20 +2994,20 @@ function renderContent(){
       var rate=pct(D.confirmed[i],D.scheduled[i]);
       return'<tr>'+
         '<td style="font-weight:500">'+l+'</td>'+
-        '<td style="font-family:\'DM Mono\',monospace">'+fmt(D.attendance[i])+'</td>'+
-        '<td style="font-family:\'DM Mono\',monospace;color:'+(diff==null?'var(--muted)':diff>0?'var(--green)':'var(--red)')+'">'+
+        '<td style="font-family:\'DM Sans\',sans-serif;font-variant-numeric:tabular-nums">'+fmt(D.attendance[i])+'</td>'+
+        '<td style="font-family:\'DM Sans\',sans-serif;font-variant-numeric:tabular-nums;color:'+(diff==null?'var(--muted)':diff>0?'var(--green)':'var(--red)')+'">'+
           (diff==null?'—':(diff>0?'+':'')+fmt(diff))+'</td>'+
-        '<td style="font-family:\'DM Mono\',monospace">'+D.confirmed[i]+'/'+D.scheduled[i]+'</td>'+
+        '<td style="font-family:\'DM Sans\',sans-serif;font-variant-numeric:tabular-nums">'+D.confirmed[i]+'/'+D.scheduled[i]+'</td>'+
         '<td>'+pillHTML(rate)+'</td>'+
       '</tr>';
     }).join('');
 
     $('content').innerHTML=
       '<div class="stat-grid">'+
-        statCard({label:'This Week',value:fmt(D.attendance[li]),sparkData:D.attendance,accent:'var(--accent)'})+
-        statCard({label:'Average',value:fmt(avg),accent:'var(--green)'})+
-        statCard({label:'Peak',value:fmt(Math.max.apply(null,D.attendance)),accent:'var(--purple)'})+
-        statCard({label:'Low',value:fmt(Math.min.apply(null,D.attendance)),accent:'var(--amber)'})+
+        statCard({label:'This Week',value:fmt(D.attendance[li]),sparkData:D.attendance})+
+        statCard({label:'Average',value:fmt(avg)})+
+        statCard({label:'Peak',value:fmt(Math.max.apply(null,D.attendance))})+
+        statCard({label:'Low',value:fmt(Math.min.apply(null,D.attendance))})+
       '</div>'+
       '<div class="panel"><div class="panel-title">Sunday Attendance Trend</div><div class="panel-sub">'+(function(){
         var abs=D.attendanceByService||{};
@@ -2959,7 +3021,7 @@ function renderContent(){
           var ds=[];
           if(svcKeys.length>0) svcKeys.forEach(function(k){ds.push({label:k,data:abs[k],color:getServiceColor(k)});});
           else ds=[{label:"Total",data:D.attendance,color:"var(--accent)"}];
-          return barChart(D.labels,ds,200,{fullWidth:true,showTotals:true});
+          return barChart(D.labels,ds,200,{fullWidth:true,showTotals:true,stacked:true});
         })()+
       '</div>'+
       '<div class="panel"><div class="panel-title" style="margin-bottom:14px">'+(D.grouping==='monthly'?'Month-by-Month':'Week-by-Week')+' Breakdown</div>'+

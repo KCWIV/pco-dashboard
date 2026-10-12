@@ -3,3 +3,4 @@ node_modules/
 .DS_Store
 gh_*/
 .ft-assignments.json
+exports/

@@ -58,6 +58,54 @@ let dataCache      = {};  // keyed by weeks count: { "8": { ts, payload }, "26":
 let peopleDataCache     = null; // { ts, payload } — new member growth + at-risk congregants
 let lifegroupsCache    = null; // { ts, payload } — life groups from PCO Groups API
 let birthdaysCache     = null; // { ts, payload } — all active people with birthdays
+let cityKidsTeamCache  = null; // { ts, payload } — City Kids new team members 2026 (slow fetch, cached 4h)
+
+async function warmCityKidsTeamCache() {
+  const CITY_KIDS_ST_ID = "1328172";
+  const start2026 = new Date("2026-01-01T00:00:00");
+  const personFirstSeen = {};
+  const personSeenPre2026 = new Set();
+  const ckPlans = [];
+  let plUrl = "/services/v2/service_types/" + CITY_KIDS_ST_ID + "/plans?filter=past&after=2025-01-01&per_page=100&order=sort_date";
+  while (plUrl) {
+    const plRes = await pcoFetch(plUrl);
+    if (plRes.status !== 200) break;
+    ckPlans.push(...(plRes.body.data || []));
+    const next = plRes.body.links && plRes.body.links.next;
+    if (next) { const p = new URL(next); plUrl = p.pathname + p.search; } else { plUrl = null; }
+  }
+  await pLimit(ckPlans.map(plan => async () => {
+    const planDate = parseLocalDate((plan.attributes || {}).sort_date || "");
+    let tmUrl = "/services/v2/service_types/" + CITY_KIDS_ST_ID + "/plans/" + plan.id + "/team_members?per_page=100";
+    while (tmUrl) {
+      const tmRes = await pcoFetch(tmUrl);
+      if (tmRes.status !== 200) break;
+      for (const tm of (tmRes.body.data || [])) {
+        const personId = tm.relationships && tm.relationships.person && tm.relationships.person.data && tm.relationships.person.data.id;
+        if (!personId) continue;
+        const name = ((tm.attributes && tm.attributes.name) || "").trim();
+        const teamRel = tm.relationships && tm.relationships.team && tm.relationships.team.data;
+        const teamId = teamRel && teamRel.id;
+        const teamName = (teamId && globalTeamNameMap[teamId]) || "";
+        if (planDate < start2026) {
+          personSeenPre2026.add(personId);
+        } else {
+          if (!personFirstSeen[personId] || planDate < personFirstSeen[personId].firstDate) {
+            personFirstSeen[personId] = { name, teamName, firstDate: planDate };
+          }
+        }
+      }
+      const next = tmRes.body.links && tmRes.body.links.next;
+      if (next) { const p = new URL(next); tmUrl = p.pathname + p.search; } else { tmUrl = null; }
+    }
+  }), CONCURRENCY);
+  const members = Object.entries(personFirstSeen)
+    .filter(([id]) => !personSeenPre2026.has(id))
+    .map(([, m]) => m)
+    .sort((a, b) => a.firstDate - b.firstDate);
+  cityKidsTeamCache = { ts: Date.now(), payload: members };
+  console.log("✅ City Kids team cache warmed — " + members.length + " new members in 2026");
+}
 let progressClients = [];
 let globalTeamNameMap = {};  // persistent: team_id → team_name (rarely changes)
 let teamFirstSeenMap = {};  // persistent: teamName → { personKey → firstSeenLabel }
@@ -1032,67 +1080,68 @@ async function buildData(weeks) {
   // Track kids per week for multi-service detection: weeklyKids[wi][personKey] = { name, services: Set }
   const weeklyKids = Array.from({ length: N }, () => ({}));
   try {
-    // ── Fallback: discover event_time IDs from check-ins for weeks missing headcounts ──
-    // Headcounts are sometimes entered days after the service. If a week bucket has
-    // no event_time IDs yet (no headcounts), scan recent check-ins to find them.
-    const weeksCoveredByHeadcounts = new Set(Object.values(kidsEventTimesByWeek).map(e => e.wi));
-    const missingWis = [];
-    for (let i = 0; i < N; i++) {
-      if (!weeksCoveredByHeadcounts.has(i)) missingWis.push(i);
-    }
-    if (missingWis.length > 0) {
-      console.log("── Kids: weeks missing headcount coverage: [" + missingWis.join(", ") + "] — scanning check-ins for event_times");
-      // Fetch recent check-ins with event_times sideloaded (one page is usually enough)
-      let ciScanUrl = "/check-ins/v2/events/" + KIDS_EVENT_ID + "/check_ins?per_page=100&order=-created_at&include=event_times";
-      let ciScanPages = 0;
-      while (ciScanUrl && ciScanPages < 5) {
-        const ciScanRes = await pcoFetch(ciScanUrl);
-        if (ciScanRes.status !== 200) break;
-        ciScanPages++;
-        const ciScanIncl = (ciScanRes.body && ciScanRes.body.included) || [];
-        const newlyCovered = new Set();
-        for (const inc of ciScanIncl) {
-          if (inc.type !== "EventTime") continue;
-          const etAttrs = inc.attributes || {};
-          const etStartsAt = etAttrs.starts_at;
-          if (!etStartsAt) continue;
-          // Parse the event_time date and determine bucket
-          const etDate = new Date(etStartsAt);
-          const etLocal = parseLocalDate(etStartsAt.split("T")[0]);
-          const wi = bucketIndexFor(etLocal, buckets);
-          // Only skip if headcounts already cover this week (not if we just discovered it this page)
-          if (wi < 0 || (weeksCoveredByHeadcounts.has(wi) && !missingWis.includes(wi))) continue;
-          if (!missingWis.includes(wi)) continue;
-          // Build time label from hour/minute attributes
-          const h = etAttrs.hour != null ? etAttrs.hour : etDate.getHours();
-          const m = etAttrs.minute != null ? etAttrs.minute : etDate.getMinutes();
-          if (h >= 18) continue;  // skip nighttime
-          const ampm = h >= 12 ? "PM" : "AM";
-          const h12 = h % 12 || 12;
-          const timeLabel = h12 + ":" + (m < 10 ? "0" : "") + m + " " + ampm;
-          const key = wi + "_" + inc.id;
-          if (!kidsEventTimesByWeek[key]) {
-            kidsEventTimesByWeek[key] = { etId: inc.id, wi, timeLabel };
-            newlyCovered.add(wi);
-            console.log("── Kids fallback: found event_time " + inc.id + " (" + timeLabel + ") for week bucket " + wi);
-          }
-        }
-        for (const wi of newlyCovered) weeksCoveredByHeadcounts.add(wi);
-        // Stop once all missing weeks are covered
-        const stillMissing = missingWis.filter(i => !weeksCoveredByHeadcounts.has(i));
-        if (stillMissing.length === 0) break;
-        // Check if oldest check-in on page is before our range
-        const ciScanData = (ciScanRes.body && ciScanRes.body.data) || [];
-        if (ciScanData.length > 0) {
-          const oldest = new Date((ciScanData[ciScanData.length - 1].attributes || {}).created_at || 0);
-          if (oldest < since) break;
-        }
-        const ciScanLinks = (ciScanRes.body && ciScanRes.body.links) || {};
-        if (ciScanLinks.next) {
-          const p = new URL(ciScanLinks.next);
-          ciScanUrl = p.pathname + p.search;
-        } else { ciScanUrl = null; }
+    // ── Fallback: discover event_time IDs that headcounts didn't reveal ────────
+    // Headcounts are entered by hand and routinely lag the service — sometimes a
+    // whole Sunday, but often just ONE service time inside an otherwise-entered
+    // Sunday (8/30/2026: 8:30 and 10:00 were entered, 11:30 never was).
+    //
+    // Coverage is therefore keyed on (week, service time), NOT week alone. Keying
+    // on week alone treats a partially-entered Sunday as "covered", so the missing
+    // service is never recovered and the week silently undercounts — the worst
+    // failure mode, because nothing looks broken.
+    //
+    // event_periods?include=event_times enumerates every service time per Sunday
+    // authoritatively, so we no longer depend on a check-in scan paging back far
+    // enough to stumble across the missing one.
+    const coverKey = (wi, timeLabel) => wi + "|" + timeLabel;
+    const coveredServices = new Set(
+      Object.values(kidsEventTimesByWeek).map(e => coverKey(e.wi, e.timeLabel))
+    );
+    let epUrl = "/check-ins/v2/events/" + KIDS_EVENT_ID
+      + "/event_periods?per_page=25&order=-starts_at&include=event_times";
+    let epPages = 0;
+    let recoveredCount = 0;
+    while (epUrl && epPages < 10) {
+      const epRes = await pcoFetch(epUrl);
+      if (epRes.status !== 200) break;
+      epPages++;
+      for (const inc of ((epRes.body && epRes.body.included) || [])) {
+        if (inc.type !== "EventTime") continue;
+        const etStartsAt = (inc.attributes || {}).starts_at;
+        if (!etStartsAt) continue;
+        // starts_at is a full UTC timestamp; process TZ is pinned to the church's
+        // timezone, so getHours() yields the correct local service time. This is
+        // the same derivation resolveHeadcountInfo() uses, so labels match exactly.
+        const etDate = parseLocalDate(etStartsAt);
+        const wi = bucketIndexFor(etDate, buckets);
+        if (wi < 0) continue;
+        const h = etDate.getHours();
+        if (h >= 18) continue;  // skip nighttime
+        const m = etDate.getMinutes();
+        const ampm = h >= 12 ? "PM" : "AM";
+        const timeLabel = (h % 12 || 12) + ":" + (m < 10 ? "0" : "") + m + " " + ampm;
+        if (coveredServices.has(coverKey(wi, timeLabel))) continue;
+        const key = wi + "_" + inc.id;
+        if (kidsEventTimesByWeek[key]) continue;
+        kidsEventTimesByWeek[key] = { etId: inc.id, wi, timeLabel };
+        coveredServices.add(coverKey(wi, timeLabel));
+        recoveredCount++;
+        console.log("── Kids fallback: recovered event_time " + inc.id + " (" + timeLabel
+          + ") for bucket " + wi + " — no headcounts entered for that service");
       }
+      // Stop once we've paged back past the requested range
+      const epData = (epRes.body && epRes.body.data) || [];
+      if (epData.length === 0) break;
+      const oldestEp = parseLocalDate((epData[epData.length - 1].attributes || {}).starts_at || 0);
+      if (oldestEp < since) break;
+      const epLinks = (epRes.body && epRes.body.links) || {};
+      if (epLinks.next) {
+        const p = new URL(epLinks.next);
+        epUrl = p.pathname + p.search;
+      } else { epUrl = null; }
+    }
+    if (recoveredCount > 0) {
+      console.log("── Kids: recovered " + recoveredCount + " service time(s) that had no headcounts");
     }
 
     const etEntries = Object.values(kidsEventTimesByWeek);
@@ -1892,6 +1941,8 @@ const server = http.createServer(async (req, res) => {
             } catch(e) { console.log("⚠ Prefetch failed for weeks=" + pw + ": " + e.message); }
           }
           prefetchRunning = false;
+          // Warm City Kids team cache after data is ready (globalTeamNameMap now populated)
+          if (!cityKidsTeamCache) warmCityKidsTeamCache().catch(e => console.log("⚠ City Kids team cache warm error:", e.message));
         })();
       }
     } catch(e) {
@@ -3094,6 +3145,279 @@ ${volTeamNames.length > 0 ? `
     return;
   }
 
+  // ── City Kids Stats Report — instant HTML shell, data loaded via JS ──────────
+  if (req.method === "GET" && parsed.pathname === "/city-kids-report") {
+    if (!savedCreds) { res.writeHead(401); return res.end("Not authenticated — open the dashboard first and enter credentials."); }
+    const shellCss = `*{margin:0;padding:0;box-sizing:border-box}body{font-family:"DM Sans",sans-serif;background:#f8f9fa;color:#1a1a2e}.page{max-width:860px;margin:0 auto;background:#fff;min-height:100vh}.header{background:linear-gradient(135deg,#14532d 0%,#16a34a 100%);color:#fff;padding:32px 40px;display:flex;align-items:center;justify-content:space-between}.header-left{display:flex;align-items:center;gap:16px}.header-logo{width:44px;height:44px;border-radius:10px;object-fit:contain}.header h1{font-size:22px;font-weight:700;letter-spacing:-.02em}.header-date{font-size:13px;opacity:.75;margin-top:2px}.header-right{text-align:right;font-size:12px;opacity:.65;line-height:1.6}.loading{padding:60px 40px;text-align:center}.spinner{width:40px;height:40px;border:3px solid #e5e7eb;border-top-color:#16a34a;border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto 16px}.loading-title{font-size:16px;font-weight:600;color:#1a1a2e;margin-bottom:8px}.loading-sub{font-size:13px;color:#6b7280}@keyframes spin{to{transform:rotate(360deg)}}`;
+    const shellHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>City Kids Stats Report — 2026</title><link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"><style>${shellCss}</style></head><body><div class="page"><div class="header"><div class="header-left"><img src="/logo.png" class="header-logo" alt="CCC"><div><h1>City Kids Stats Report</h1><div class="header-date">2026 Year-to-Date</div></div></div><div class="header-right">City Church Chicago</div></div><div class="loading" id="loading"><div class="spinner"></div><div class="loading-title">Building your report…</div><div class="loading-sub">Pulling data from Planning Center — usually takes 60–90 seconds on first load.</div></div><div id="report-body" style="display:none"></div></div><script>
+(function poll(){
+  fetch('/city-kids-report-data').then(r=>{
+    if(r.status===202){setTimeout(poll,5000);return;}
+    if(r.ok) return r.text().then(html=>{
+      document.getElementById('loading').style.display='none';
+      document.getElementById('report-body').innerHTML=html;
+      document.getElementById('report-body').style.display='';
+    });
+    throw new Error('HTTP '+r.status);
+  }).catch(e=>{
+    document.getElementById('loading').innerHTML='<div class="loading-title" style="color:#dc2626">Error loading report</div><div class="loading-sub">'+e.message+'</div><br><a href="/city-kids-report" style="color:#16a34a">Retry</a>';
+  });
+})();
+</script></body></html>`;
+    res.writeHead(200, { "Content-Type": "text/html" });
+    res.end(shellHtml);
+    return;
+  }
+
+  // ── City Kids Stats Report — data endpoint (cache-only, polls until ready) ───
+  if (req.method === "GET" && parsed.pathname === "/city-kids-report-data") {
+    if (!savedCreds) { res.writeHead(401); return res.end("Not authenticated"); }
+    try {
+      const CACHE_TTL = 30 * 60 * 1000;
+      const TEAM_CACHE_TTL = 4 * 60 * 60 * 1000;
+      const D = dataCache["52"] && (Date.now() - dataCache["52"].ts < CACHE_TTL) ? dataCache["52"].payload : null;
+      const teamReady = cityKidsTeamCache && (Date.now() - cityKidsTeamCache.ts < TEAM_CACHE_TTL);
+      // Return 202 while startup is still warming — shell page will poll again
+      if (!D || !teamReady) {
+        res.writeHead(202, { "Content-Type": "text/plain" });
+        return res.end("loading");
+      }
+
+      const { buckets } = buildTimeBuckets(52);
+      const N = buckets.length;
+
+      // 52-week range → monthly buckets. Count Sundays in each bucket to normalize.
+      function sundaysInBucket(b) {
+        let count = 0, d = new Date(b.start);
+        d.setDate(d.getDate() + (7 - d.getDay()) % 7); // first Sunday on or after start
+        while (d <= b.end) { count++; d.setDate(d.getDate() + 7); }
+        return Math.max(count, 1);
+      }
+
+      // Month buckets that fall in 2026
+      const start2026 = new Date("2026-01-01T00:00:00");
+      const w2026 = [];
+      for (let i = 0; i < buckets.length; i++) {
+        if (buckets[i].start >= start2026) w2026.push(i);
+      }
+
+      // ── Service schedule: 3 services before April 5, 4 after ──────────────────
+      const EASTER_DATE = new Date("2026-04-05T00:00:00");
+      const PRE_SERVICES  = new Set(["9:00 AM", "10:30 AM", "12:30 PM"]);
+      const POST_SERVICES = new Set(["8:30 AM", "10:00 AM", "11:30 AM", "1:00 PM"]);
+      // April bucket is mixed (Easter is on Apr 5 = switchover day). Use POST for the whole month
+      // since most of April used the new schedule.
+      const servicesForBucket = i => {
+        if (!buckets[i]) return PRE_SERVICES;
+        // If the bucket straddles Easter (April), use POST (Apr 5 onwards is 4-service)
+        const bStart = buckets[i].start;
+        return bStart >= EASTER_DATE ? POST_SERVICES : PRE_SERVICES;
+      };
+
+      // ── Per-room monthly totals and all-time per-Sunday records ───────────────
+      const roomBreakdown = D.kidsRoomBreakdown || {};
+      const allServiceTimes = Object.keys(roomBreakdown);
+      const kidRooms = [...new Set(allServiceTimes.flatMap(st => Object.keys(roomBreakdown[st] || {})))]
+        .filter(r => r !== "KUEST Team").sort();
+
+      // Monthly kids total per bucket (filtered by correct service times, no KUEST)
+      const monthlyKidsTotal = new Array(N).fill(0);
+      for (let i = 0; i < N; i++) {
+        const svcs = servicesForBucket(i);
+        for (const st of allServiceTimes) {
+          if (!svcs.has(st)) continue;
+          for (const room of kidRooms) {
+            monthlyKidsTotal[i] += (((roomBreakdown[st] || {})[room]) || [])[i] || 0;
+          }
+        }
+      }
+
+      // ── Average kids per Sunday (monthly total ÷ Sundays in that month) ────────
+      const nz2026 = w2026.filter(i => monthlyKidsTotal[i] > 0);
+      const avgKidsSunday = nz2026.length > 0
+        ? Math.round(nz2026.reduce((s, i) => s + monthlyKidsTotal[i] / sundaysInBucket(buckets[i]), 0) / nz2026.length)
+        : 0;
+
+      // ── Easter 2026 kids — use 8-week weekly cache for single-Sunday precision ──
+      let easterKids = 0;
+      {
+        const D8 = dataCache["8"] && dataCache["8"].payload;
+        if (D8) {
+          const { buckets: b8 } = buildTimeBuckets(8);
+          const ei = bucketIndexFor(new Date("2026-04-05T12:00:00"), b8);
+          if (ei >= 0) {
+            const rb8 = D8.kidsRoomBreakdown || {};
+            const st8 = Object.keys(rb8);
+            for (const st of st8) {
+              if (!POST_SERVICES.has(st)) continue;
+              for (const room of kidRooms) {
+                easterKids += (((rb8[st] || {})[room]) || [])[ei] || 0;
+              }
+            }
+          }
+        }
+      }
+
+      // ── Per-room stats: avg per Sunday in 2026, all-time per-Sunday high ────────
+      const roomStats = {};
+      for (const room of kidRooms) {
+        const monthlyRoom = new Array(N).fill(0);
+        for (let i = 0; i < N; i++) {
+          const svcs = servicesForBucket(i);
+          for (const st of allServiceTimes) {
+            if (!svcs.has(st)) continue;
+            monthlyRoom[i] += (((roomBreakdown[st] || {})[room]) || [])[i] || 0;
+          }
+        }
+        // Average per Sunday in 2026 months
+        const nzRoom = w2026.filter(i => monthlyRoom[i] > 0);
+        const avg2026 = nzRoom.length > 0
+          ? Math.round(nzRoom.reduce((s, i) => s + monthlyRoom[i] / sundaysInBucket(buckets[i]), 0) / nzRoom.length)
+          : 0;
+        // All-time per-Sunday high (across all 52-week monthly buckets)
+        const perSundayHigh = Math.max(0, ...Array.from({length: N}, (_, i) => monthlyRoom[i] > 0 ? Math.round(monthlyRoom[i] / sundaysInBucket(buckets[i])) : 0));
+        // Easter from the 8-week cache
+        let easterRoomKids = 0;
+        {
+          const D8 = dataCache["8"] && dataCache["8"].payload;
+          if (D8) {
+            const { buckets: b8 } = buildTimeBuckets(8);
+            const ei = bucketIndexFor(new Date("2026-04-05T12:00:00"), b8);
+            if (ei >= 0) {
+              const rb8 = D8.kidsRoomBreakdown || {};
+              for (const st of Object.keys(rb8)) {
+                if (!POST_SERVICES.has(st)) continue;
+                easterRoomKids += (((rb8[st] || {})[room]) || [])[ei] || 0;
+              }
+            }
+          }
+        }
+        roomStats[room] = { avg2026, record: perSundayHigh, easterTotal: easterRoomKids };
+      }
+
+      // ── New families in 2026 (households with at least one child) ──────────────
+      const families2026 = [];
+      try {
+        let hhUrl = "/people/v2/households?order=-created_at&per_page=100&include=people";
+        let hhDone = false;
+        while (hhUrl && !hhDone) {
+          const hhRes = await pcoFetch(hhUrl);
+          for (const hh of (hhRes.body.data || [])) {
+            const createdAt = new Date(hh.attributes.created_at);
+            if (createdAt < start2026) { hhDone = true; break; }
+            const memberIds = ((hh.relationships && hh.relationships.people && hh.relationships.people.data) || []).map(p => p.id);
+            const included = hhRes.body.included || [];
+            const hasChild = memberIds.some(mid => {
+              const person = included.find(inc => inc.id === mid && inc.type === "Person");
+              return person && person.attributes.child;
+            });
+            if (!hasChild) continue;
+            const members = memberIds.map(mid => {
+              const person = included.find(inc => inc.id === mid && inc.type === "Person");
+              if (!person) return null;
+              return { name: ((person.attributes.first_name || "") + " " + (person.attributes.last_name || "")).trim(), child: person.attributes.child || false };
+            }).filter(Boolean);
+            families2026.push({ name: hh.attributes.name, createdAt: hh.attributes.created_at, memberCount: members.length, members });
+          }
+          if (hhDone) break;
+          const next = hhRes.body.links && hhRes.body.links.next;
+          if (next) { const p = new URL(next); hhUrl = p.pathname + p.search; } else { hhUrl = null; }
+        }
+      } catch(e) { console.log("⚠ City Kids report families error:", e.message); }
+
+      // ── New team members in 2026 — already guaranteed warm by 202 check above ──
+      const newTeamMembers = cityKidsTeamCache.payload;
+
+      // ── Render HTML ─────────────────────────────────────────────────────────────
+      const fmt = n => (n || 0).toLocaleString();
+      const fmtDate = d => new Date(d).toLocaleDateString("en-US", { timeZone: CHURCH_CONFIG.timezone, month: "short", day: "numeric", year: "numeric" });
+      const now = new Date();
+
+      const roomRows = kidRooms.map(room => {
+        const s = roomStats[room] || {};
+        return `<tr><td>${room}</td><td class="num">${fmt(s.avg2026)}</td><td class="num">${fmt(s.easterTotal)}</td><td class="num record">${fmt(s.record)}</td></tr>`;
+      }).join("");
+
+      const familyRows = families2026.slice(0, 100).map(f => {
+        const kids = f.members.filter(m => m.child).map(m => m.name).join(", ");
+        const adults = f.members.filter(m => !m.child).map(m => m.name).join(", ");
+        return `<tr><td>${f.name}</td><td>${kids || "—"}</td><td>${adults || "—"}</td><td class="muted">${fmtDate(f.createdAt)}</td></tr>`;
+      }).join("");
+
+      const teamRows = newTeamMembers.map(m => {
+        return `<tr><td>${m.name}</td><td>${m.teamName}</td><td class="muted">${m.firstDate.toLocaleDateString("en-US", { timeZone: CHURCH_CONFIG.timezone, month: "short", day: "numeric", year: "numeric" })}</td></tr>`;
+      }).join("");
+
+      // Return inner HTML only — injected by the shell page via JS
+      const innerCss = `<style>
+        .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid #e5e7eb}
+        .kpi{padding:18px 16px;border-right:1px solid #e5e7eb;text-align:center}
+        .kpi:last-child{border-right:none}
+        .kpi-value{font-size:30px;font-weight:700;letter-spacing:-.03em;line-height:1;color:#14532d}
+        .kpi-label{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#6b7280;margin-bottom:8px;font-weight:600}
+        .kpi-sub{font-size:11px;margin-top:6px;color:#9ca3af}
+        .section{padding:24px 40px;border-bottom:1px solid #e5e7eb}
+        .section:last-of-type{border-bottom:none}
+        .section-title{font-size:15px;font-weight:700;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+        .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+        table{width:100%;border-collapse:collapse;font-size:13px}
+        th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#6b7280;font-weight:600;padding:6px 10px;border-bottom:2px solid #e5e7eb}
+        td{padding:8px 10px;border-bottom:1px solid #f3f4f6;color:#1a1a2e}
+        tr:last-child td{border-bottom:none}
+        .num{text-align:right;font-weight:600;font-variant-numeric:tabular-nums}
+        .record{color:#14532d}
+        .muted{color:#9ca3af;font-size:12px}
+        .empty{color:#9ca3af;font-style:italic;padding:16px 0;text-align:center}
+        .ck-footer{padding:20px 40px;text-align:center;font-size:11px;color:#9ca3af;border-top:1px solid #e5e7eb}
+        .header-date{font-size:13px;opacity:.75;margin-top:2px}
+        @media(max-width:640px){.kpi-grid{grid-template-columns:repeat(2,1fr)}.kpi:nth-child(2n){border-right:none}.section{padding:20px 24px}}
+      </style>`;
+
+      const html = `${innerCss}
+<div style="padding:12px 40px;background:#f0fdf4;border-bottom:1px solid #bbf7d0;font-size:12px;color:#166534">${nz2026.length} months of 2026 tracked &mdash; Generated ${now.toLocaleString("en-US", { timeZone: CHURCH_CONFIG.timezone, month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })} CT</div>
+
+<div class="kpi-grid">
+  <div class="kpi"><div class="kpi-label">Avg Kids / Sunday</div><div class="kpi-value">${fmt(avgKidsSunday)}</div><div class="kpi-sub">2026 YTD avg</div></div>
+  <div class="kpi"><div class="kpi-label">Easter 2026</div><div class="kpi-value">${fmt(easterKids)}</div><div class="kpi-sub">April 5, 2026</div></div>
+  <div class="kpi"><div class="kpi-label">New Families</div><div class="kpi-value">${fmt(families2026.length)}</div><div class="kpi-sub">with kids, since Jan 1</div></div>
+  <div class="kpi"><div class="kpi-label">New Team Members</div><div class="kpi-value">${fmt(newTeamMembers.length)}</div><div class="kpi-sub">first served in 2026</div></div>
+</div>
+
+<div class="section">
+  <div class="section-title"><div class="dot" style="background:#16a34a"></div>Room Breakdown — 2026 Averages &amp; All-Time Records</div>
+  ${kidRooms.length > 0 ? `<table>
+    <thead><tr><th>Room</th><th class="num">2026 Avg / Week</th><th class="num">Easter Total</th><th class="num record">All-Time High</th></tr></thead>
+    <tbody>${roomRows}</tbody>
+  </table>` : `<div class="empty">No room breakdown data available.</div>`}
+</div>
+
+<div class="section">
+  <div class="section-title"><div class="dot" style="background:#2563eb"></div>New Families in 2026 <span style="font-weight:400;color:#6b7280;font-size:13px;margin-left:6px">${families2026.length} total</span></div>
+  ${families2026.length > 0 ? `<table>
+    <thead><tr><th>Household</th><th>Kids</th><th>Adults</th><th>Created</th></tr></thead>
+    <tbody>${familyRows}</tbody>
+  </table>` : `<div class="empty">No new families found.</div>`}
+</div>
+
+<div class="section">
+  <div class="section-title"><div class="dot" style="background:#7c3aed"></div>New Team Members in 2026 <span style="font-weight:400;color:#6b7280;font-size:13px;margin-left:6px">${newTeamMembers.length} total</span></div>
+  ${newTeamMembers.length > 0 ? `<table>
+    <thead><tr><th>Name</th><th>Team</th><th>Date Added</th></tr></thead>
+    <tbody>${teamRows}</tbody>
+  </table>` : `<div class="empty">No new City Kids team members found in 2026.</div>`}
+</div>
+
+<div class="ck-footer">City Church Chicago &middot; <a href="/" style="color:#16a34a">Open Dashboard</a></div>`;
+
+      res.writeHead(200, { "Content-Type": "text/html" });
+      res.end(html);
+    } catch(e) {
+      res.writeHead(500, { "Content-Type": "text/plain" });
+      res.end("Error generating City Kids report: " + e.message);
+    }
+    return;
+  }
+
   // ── New Profiles Report (today's new PCO people + action source) ─────────────
   if (req.method === "GET" && parsed.pathname === "/new-profiles-report") {
     if (!savedCreds) { res.writeHead(401); return res.end("Not authenticated — open the dashboard first and enter credentials."); }
@@ -3602,4 +3926,23 @@ ${volTeamNames.length > 0 ? `
 server.listen(PORT, () => {
   console.log("\n✅ PCO Dashboard running at http://localhost:" + PORT);
   console.log("   Debug: http://localhost:" + PORT + "/debug\n");
+
+  // Warm all caches in the background at startup if credentials are available
+  if (savedCreds) {
+    (async () => {
+      try {
+        for (const pw of [8, 13, 26, 52]) {
+          if (!dataCache[String(pw)]) {
+            console.log("🔄 Startup prefetch: weeks=" + pw);
+            const pp = await buildData(pw);
+            dataCache[String(pw)] = { ts: Date.now(), payload: pp };
+          }
+        }
+        console.log("🔄 Startup: warming City Kids team cache…");
+        await warmCityKidsTeamCache();
+      } catch(e) {
+        console.log("⚠ Startup cache warm error:", e.message);
+      }
+    })();
+  }
 });
