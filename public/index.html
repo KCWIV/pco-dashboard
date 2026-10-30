@@ -361,7 +361,7 @@ input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(90,174,224,.15);
         <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span> City Kids Report
       </a>
       <a href="/new-profiles-report" target="_blank" class="nav-item" style="text-decoration:none">
-        <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/></svg></span> New Profiles Today
+        <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/></svg></span> New Profiles This Week
       </a>
     </nav>
     <div class="sidebar-footer">
@@ -1349,7 +1349,7 @@ function renderLifeGroupsTab(){
     var isActive=lgSelectedSeason===sl;
     var isCurrent=sl===currentSeason;
     var ss=seasonStatsMap[sl]||{};
-    seasonToggleHtml+='<button onclick="lgSelectedSeason=\''+esc(sl)+'\';renderLifeGroupsTab()" style="'+
+    seasonToggleHtml+='<button title="'+esc((ss.starts||[]).join(', ')+' starts')+'" onclick="lgSelectedSeason=\''+esc(sl)+'\';renderLifeGroupsTab()" style="'+
       'display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:10px;font-size:13px;cursor:pointer;border:1px solid;font-family:inherit;font-weight:500;transition:all .15s;'+
       (isActive?'background:var(--brand);color:#fff;border-color:var(--brand);box-shadow:0 2px 8px rgba(90,174,224,.3);':'background:var(--surface);color:var(--muted);border-color:var(--border);')+
       '">'+esc(sl)+
@@ -1385,10 +1385,10 @@ function renderLifeGroupsTab(){
       var retColor=t.retentionRate>=70?'var(--green)':t.retentionRate>=40?'var(--amber)':'var(--red)';
       retentionHtml+='<div class="panel" style="margin-bottom:14px">'+
         '<div class="panel-title" style="--panel-dot:var(--teal)">Season Transition: '+esc(t.from)+' → '+esc(t.to)+'</div>'+
-        '<div class="panel-sub">'+(t.from===activeDnrFrom&&t.to===activeDnrTo?'Active window — tracking who from '+esc(t.from)+' hasn\'t yet signed up for '+esc(t.to):'Historical retention data')+'</div>'+
+        '<div class="panel-sub">'+(t.from===activeDnrFrom&&t.to===activeDnrTo?'Active window — tracking who from '+esc(t.from)+' hasn\'t yet signed up for '+esc(t.to):'Historical data')+' · Continued = in any Life Group in '+esc(t.from)+' and any Life Group (same or different) in '+esc(t.to)+'</div>'+
         '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">'+
-          '<div class="vd-stat"><div class="vd-stat-label">Retention</div><div class="vd-stat-value" style="color:'+retColor+'">'+t.retentionRate+'%</div></div>'+
-          '<div class="vd-stat"><div class="vd-stat-label">Returning</div><div class="vd-stat-value" style="color:var(--green)">'+t.returning+'</div></div>'+
+          '<div class="vd-stat"><div class="vd-stat-label">Continued in LG</div><div class="vd-stat-value" style="color:'+retColor+'">'+t.retentionRate+'%</div></div>'+
+          '<div class="vd-stat"><div class="vd-stat-label">Continued On</div><div class="vd-stat-value" style="color:var(--green)">'+t.returning+'</div></div>'+
           '<div class="vd-stat"><div class="vd-stat-label">New People</div><div class="vd-stat-value" style="color:var(--accent)">'+t.new+'</div></div>'+
           '<div class="vd-stat"><div class="vd-stat-label">Did Not Return</div><div class="vd-stat-value" style="color:var(--red)">'+t.didNotReturn+'</div></div>'+
         '</div>';
@@ -1415,7 +1415,7 @@ function renderLifeGroupsTab(){
         '</div>';
       }
 
-      retentionHtml+=collapsibleList('Returning',t.returningNames,'var(--green)','Returning');
+      retentionHtml+=collapsibleList('Continued On',t.returningNames,'var(--green)','Returning');
       retentionHtml+=collapsibleList('New to Life Groups',t.newNames,'var(--accent)','New');
       retentionHtml+='</div>';
     });

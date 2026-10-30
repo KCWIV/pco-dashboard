@@ -2385,8 +2385,8 @@ const server = http.createServer(async (req, res) => {
       // completely starting 2026, so earlier seasons are not comparable.
       const LG_FIRST_YEAR = 2026;
       // Seasons hidden from the dashboard until leadership has verified the
-      // group list in PCO. Remove a label from this list to publish it.
-      const LG_HIDDEN_SEASONS = new Set(["October–December 2026"]);
+      // group list in PCO. Add a label (e.g. "Fall 2026") to hide it.
+      const LG_HIDDEN_SEASONS = new Set([]);
       const groups = [];
       const groupFields = "&fields[Group]=name,schedule,memberships_count,description_as_plain_text,public_church_center_web_url,created_at,archived_at,contact_email,listed";
       for (const flt of ["group_type", "group_type,archived"]) {
@@ -2397,7 +2397,7 @@ const server = http.createServer(async (req, res) => {
           for (const g of (r.body.data || [])) {
             const a = g.attributes;
             // Skip aggregate/leadership groups that double-count members
-            if (/serve team|young adult fridays|lg leaders|lg coaches/i.test(a.name || "")) continue;
+            if (/serve team|young adult fridays|lg leaders|lg coaches|^lg \d+ - coach/i.test(a.name || "")) continue;
             groups.push({
               id:          g.id,
               name:        a.name,
@@ -2416,47 +2416,55 @@ const server = http.createServer(async (req, res) => {
       }
 
       // ── Season detection (year-aware) ─────────────────────────────────────
-      // A season is a calendar quarter in a specific year, labelled e.g.
-      // "January–March 2026". Without the year, the 2025 and 2026 January
-      // seasons collapse into one bucket and retention math compares the wrong
-      // cohorts. Resolution order:
-      //   1. explicit range in the name/schedule ("| April-June")
-      //   2. explicit month name in the name/schedule ("January Life Group")
-      //   3. created_at, with the church's prep cadence: groups are created in
-      //      the month BEFORE a season (Mar→Apr–Jun, Jun→Jul–Sep, Sep→Oct–Dec)
-      //      and in Nov/Dec for the following Jan–Mar.
-      const QUARTER_LABELS = ["January–March", "April–June", "July–September", "October–December"];
-      const quarterRangePatterns = [
-        /\bjan(uary)?[\s\-–]+mar(ch)?\b/i,
-        /\bapr(il)?[\s\-–]+jun(e)?\b/i,
-        /\bjul(y)?[\s\-–]+sep(tember)?\b/i,
-        /\boct(ober)?[\s\-–]+dec(ember)?\b/i,
-      ];
+      // Groups launch every month and run ~3 months, so a season is a band of
+      // START months, drawn where the church's own fall groups fall
+      // (Aug–Oct, Sep–Nov and Oct–Nov all start Aug–Oct):
+      //   Winter = Nov–Jan starts · Spring = Feb–Apr · Summer = May–Jul · Fall = Aug–Oct
+      // Every member moving on 3 months later lands in the next season.
+      // Winter takes the year of its January (Nov 2025 start → Winter 2026).
+      // Start month resolution order:
+      //   1. month range in the name/schedule ("| Sep-Nov", "| April - June")
+      //   2. a full month name in the name/schedule ("January Life Group")
+      //   3. created_at — groups are set up the month before they start;
+      //      created in the first 10 days counts as that month's launch, and
+      //      the Nov/Dec setup batch launches in January.
+      const SEASON_NAMES = ["Winter", "Spring", "Summer", "Fall"];
       const MONTH_NAMES = ['january','february','march','april','may','june',
                            'july','august','september','october','november','december'];
-      const seasonLabel = (year, q) => QUARTER_LABELS[q] + " " + year;
-      const seasonKey   = (year, q) => year * 4 + q; // sortable
+      const MONTH_TOKEN = "(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)";
+      const monthRangeRe = new RegExp("\\b" + MONTH_TOKEN + "\\.?\\s*[\\-–]+\\s*" + MONTH_TOKEN + "\\b", "i");
+      const monthIndex = tok => MONTH_NAMES.findIndex(m => m.startsWith(tok.toLowerCase().slice(0, 3))) + 1;
+      const seasonOf = (year, startMonth) => {
+        if (startMonth >= 11) return { sy: year + 1, si: 0 };
+        if (startMonth === 1) return { sy: year, si: 0 };
+        return { sy: year, si: Math.floor((startMonth - 2) / 3) + 1 };
+      };
+      const seasonLabel = (sy, si) => SEASON_NAMES[si] + " " + sy;
+      const seasonKey   = (sy, si) => sy * 4 + si; // sortable
 
       function detectSeason(group) {
         const text = (group.name || "") + " | " + (group.schedule || "");
         const created = group.createdAt ? group.createdAt.split("-").map(Number) : null;
-        const cy = created ? created[0] : null, cm = created ? created[1] : null;
-        let q = null, startMonth = null;
-        for (let i = 0; i < 4; i++) if (quarterRangePatterns[i].test(text)) { q = i; startMonth = i * 3 + 1; break; }
-        if (q === null) {
-          for (let i = 0; i < 12; i++) if (new RegExp('\\b' + MONTH_NAMES[i] + '\\b', 'i').test(text)) { startMonth = i + 1; q = Math.floor(i / 3); break; }
+        const cy = created ? created[0] : null, cm = created ? created[1] : null, cd = created ? created[2] : null;
+        let startMonth = null;
+        const rm = text.match(monthRangeRe);
+        if (rm) startMonth = monthIndex(rm[1]);
+        if (!startMonth) {
+          for (let i = 0; i < 12; i++) if (new RegExp('\\b' + MONTH_NAMES[i] + '\\b', 'i').test(text)) { startMonth = i + 1; break; }
         }
         let year = cy;
-        if (q === null) {
+        if (!startMonth) {
           if (!cm) return null;
-          if (cm >= 11)          { q = 0; year = cy + 1; startMonth = 1; }   // Nov/Dec → next Jan–Mar
-          else if (cm % 3 === 0) { q = cm / 3; startMonth = cm + 1; }       // Mar/Jun/Sep → next quarter
-          else                   { q = Math.floor((cm - 1) / 3); startMonth = cm; }
+          if (cm >= 11)    { startMonth = 1; year = cy + 1; }
+          else if (cd <= 10) startMonth = cm;
+          else             startMonth = cm + 1;
         } else if (cm && startMonth < cm - 3) {
           year = cy + 1; // tagged January but created the previous autumn
         }
         if (!year) return null;
-        return { year, q, startMonth, label: seasonLabel(year, q), key: seasonKey(year, q) };
+        const { sy, si } = seasonOf(year, startMonth);
+        const startLabel = MONTH_NAMES[startMonth - 1].charAt(0).toUpperCase() + MONTH_NAMES[startMonth - 1].slice(1, 3);
+        return { year: sy, startMonth, startLabel, label: seasonLabel(sy, si), key: seasonKey(sy, si) };
       }
 
       // Tag each group; drop anything before LG_FIRST_YEAR or undatable
@@ -2467,7 +2475,8 @@ const server = http.createServer(async (req, res) => {
         g.season = s.label;
         g.seasonKey = s.key;
         g.startMonth = s.startMonth;
-        g.displayName = g.name.replace(/\s*\|\s*(january|april|july|october)[\s\-–]+(march|june|september|december)\s*/i, "").trim();
+        g.startLabel = s.startLabel;
+        g.displayName = g.name.replace(new RegExp("\\s*\\|\\s*" + MONTH_TOKEN + "\\.?\\s*[\\-–]+\\s*" + MONTH_TOKEN + "\\b\\s*", "i"), " ").replace(/\s*\|\s*$/, "").trim();
       }
 
       // Sort by member count descending
@@ -2480,7 +2489,8 @@ const server = http.createServer(async (req, res) => {
       for (const g of groups) seasonKeys[g.season] = g.seasonKey;
       const allSeasons = Object.keys(seasonKeys).sort((a, b) => seasonKeys[a] - seasonKeys[b]);
       // Current = this calendar quarter if it has groups, else the latest season that does
-      const calendarSeason = seasonLabel(now.getFullYear(), Math.floor((currentMonth - 1) / 3));
+      const calSeason = seasonOf(now.getFullYear(), currentMonth);
+      const calendarSeason = seasonLabel(calSeason.sy, calSeason.si);
       const currentSeasonLabel = seasonKeys[calendarSeason] !== undefined ? calendarSeason : (allSeasons[allSeasons.length - 1] || calendarSeason);
 
       // Active DNR is month-based, not season-based.
@@ -2578,6 +2588,7 @@ const server = http.createServer(async (req, res) => {
 
         const totalEnrolled = sGroups.reduce((s, g) => s + g.members, 0);
         seasonStats[sl] = {
+          starts: [...new Set(sGroups.map(g => g.startMonth))].sort((a, b) => ((a + 1) % 12) - ((b + 1) % 12)).map(m => MONTH_NAMES[m - 1].charAt(0).toUpperCase() + MONTH_NAMES[m - 1].slice(1, 3)),
           total: sGroups.length,
           totalEnrolled,
           uniqueIndividuals: personIds.size,
@@ -3432,16 +3443,28 @@ ${volTeamNames.length > 0 ? `
     return;
   }
 
-  // ── New Profiles Report (today's new PCO people + action source) ─────────────
+  // ── New Profiles Report (this week's new PCO people + action source) ─────────
   if (req.method === "GET" && parsed.pathname === "/new-profiles-report") {
     if (!savedCreds) { res.writeHead(401); return res.end("Not authenticated — open the dashboard first and enter credentials."); }
     try {
-      const todayDateCT = new Date().toLocaleDateString("en-CA", { timeZone: CHURCH_CONFIG.timezone });
-      const sinceISO = todayDateCT + "T00:00:00-05:00";
+      // Week = Sunday 00:00 church time through now.
+      const tz = CHURCH_CONFIG.timezone;
       const now = new Date();
-      const reportDate = now.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: CHURCH_CONFIG.timezone });
+      const todayDateCT = now.toLocaleDateString("en-CA", { timeZone: tz });
+      const [ty, tm, td] = todayDateCT.split("-").map(Number);
+      const todayUTC = new Date(Date.UTC(ty, tm - 1, td));
+      const weekStartUTC = new Date(todayUTC.getTime() - todayUTC.getUTCDay() * 86400000);
+      const weekStartDate = weekStartUTC.toISOString().slice(0, 10);
+      // Offset at Sunday noon (avoids the 2 AM DST switch), e.g. "GMT-5" → "-05:00"
+      const offRaw = new Date(weekStartDate + "T12:00:00Z").toLocaleString("en-US", { timeZone: tz, timeZoneName: "shortOffset" }).split("GMT")[1] || "";
+      const offM = offRaw.match(/^([+-])(\d{1,2})(?::(\d{2}))?$/);
+      const tzOffset = offM ? offM[1] + offM[2].padStart(2, "0") + ":" + (offM[3] || "00") : "+00:00";
+      const sinceISO = weekStartDate + "T00:00:00" + tzOffset;
+      const sinceMs = new Date(sinceISO).getTime();
+      const fmtDay = d => d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: tz });
+      const reportDate = fmtDay(new Date(sinceISO)) + " – " + fmtDay(now) + ", " + ty;
 
-      // 1. Fetch all people created today
+      // 1. Fetch all people created this week
       const newPeople = [];
       let npUrl = "/people/v2/people?where[created_at][gte]=" + encodeURIComponent(sinceISO) + "&order=-created_at&per_page=100&fields[Person]=first_name,last_name,created_at";
       while (npUrl) {
@@ -3455,11 +3478,11 @@ ${volTeamNames.length > 0 ? `
         npUrl = next ? (new URL(next)).pathname + (new URL(next)).search : null;
       }
 
-      // 2. Collect person IDs from check-ins created today
+      // 2. Collect person IDs from check-ins created this week
       const checkInPersonIds = new Set();
       let ciUrl = "/check-ins/v2/check_ins?where[created_at][gte]=" + encodeURIComponent(sinceISO) + "&per_page=100";
       let ciPages = 0;
-      while (ciUrl && ciPages < 20) {
+      while (ciUrl && ciPages < 60) {
         const r = await pcoFetch(ciUrl);
         if (r.status !== 200) break;
         for (const ci of (r.body && r.body.data) || []) {
@@ -3471,12 +3494,12 @@ ${volTeamNames.length > 0 ? `
         ciPages++;
       }
 
-      // 3. Collect person IDs from group memberships joined today (any group type)
+      // 3. Collect person IDs from group memberships joined this week (any group type)
       const groupSignupPersonIds = new Set();
       const groupSignupNames = {};  // personId → group name
       let lgUrl2 = "/groups/v2/memberships?include=group&order=-joined_at&per_page=100";
       let lgPages = 0;
-      while (lgUrl2 && lgPages < 10) {
+      while (lgUrl2 && lgPages < 20) {
         const r = await pcoFetch(lgUrl2);
         if (r.status !== 200) break;
         const members  = (r.body && r.body.data)     || [];
@@ -3485,15 +3508,15 @@ ${volTeamNames.length > 0 ? `
         for (const inc of included) {
           if (inc.type === "Group") groupNameMap[inc.id] = (inc.attributes && inc.attributes.name) || "Group";
         }
-        let pastToday = false;
+        let pastWeekStart = false;
         for (const m of members) {
-          const joinedDate = ((m.attributes && m.attributes.joined_at) || "").slice(0, 10);
-          if (joinedDate < todayDateCT) { pastToday = true; break; }
+          const joinedAt = (m.attributes && m.attributes.joined_at) || "";
+          if (!joinedAt || new Date(joinedAt).getTime() < sinceMs) { pastWeekStart = true; break; }
           const pid = m.relationships && m.relationships.person && m.relationships.person.data && m.relationships.person.data.id;
           const gid = m.relationships && m.relationships.group    && m.relationships.group.data    && m.relationships.group.data.id;
           if (pid) { groupSignupPersonIds.add(pid); groupSignupNames[pid] = groupNameMap[gid] || "Group"; }
         }
-        if (pastToday || members.length === 0) break;
+        if (pastWeekStart || members.length === 0) break;
         const next = r.body && r.body.links && r.body.links.next;
         lgUrl2 = next ? (new URL(next)).pathname + (new URL(next)).search : null;
         lgPages++;
@@ -3501,7 +3524,7 @@ ${volTeamNames.length > 0 ? `
 
       // 4. Tag each person with their inferred source
       const tagged = newPeople.map(p => {
-        const timeStr = p.createdAt ? new Date(p.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: CHURCH_CONFIG.timezone }) : "—";
+        const timeStr = p.createdAt ? new Date(p.createdAt).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: tz }) : "—";
         let source = "New Profile";
         let sourceColor = "#6b7280";
         let sourceBg = "#f3f4f6";
@@ -3533,10 +3556,10 @@ ${volTeamNames.length > 0 ? `
               </td>
             </tr>`
           ).join("")
-        : `<tr><td colspan="3" style="padding:24px;text-align:center;color:#9ca3af;font-style:italic">No new profiles found today</td></tr>`;
+        : `<tr><td colspan="3" style="padding:24px;text-align:center;color:#9ca3af;font-style:italic">No new profiles found this week</td></tr>`;
 
       const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>New Profiles — ${todayDateCT}</title>
+<title>New Profiles — Week of ${weekStartDate}</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
@@ -3563,7 +3586,7 @@ ${volTeamNames.length > 0 ? `
     <img src="/logo.png" class="header-logo" alt="CCC">
     <div><h1>New Church Center Profiles</h1><div class="header-date">${reportDate}</div></div>
   </div>
-  <div class="header-right">City Church Chicago<br>${tagged.length} new profile${tagged.length !== 1 ? "s" : ""} today</div>
+  <div class="header-right">City Church Chicago<br>${tagged.length} new profile${tagged.length !== 1 ? "s" : ""} this week</div>
 </div>
 <div class="summary">
   Sources detected: <strong>${tagged.filter(p => p.source.startsWith("Family")).length}</strong> check-in &nbsp;·&nbsp;
@@ -3572,7 +3595,7 @@ ${volTeamNames.length > 0 ? `
   <strong>${tagged.filter(p => p.source.startsWith("Check-In +")).length}</strong> both
 </div>
 <table>
-  <thead><tr><th>Name</th><th>Time Created</th><th>Source</th></tr></thead>
+  <thead><tr><th>Name</th><th>Created</th><th>Source</th></tr></thead>
   <tbody>${rows}</tbody>
 </table>
 <div class="footer">Generated ${now.toLocaleString("en-US", { timeZone: CHURCH_CONFIG.timezone })} CT &middot; City Church Chicago &middot; <a href="/" style="color:#5AAEE0">Open Dashboard</a></div>
